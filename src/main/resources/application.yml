@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: bit-forum-spring
+  datasource:
+    url: jdbc:mysql://localhost:3306/bit_forum?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+jwt:
+  secret: bit-forum-secret-key-2026-must-256-bit!!
+  expiration: 604800000
+
