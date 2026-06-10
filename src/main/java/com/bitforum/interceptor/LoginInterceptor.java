@@ -9,8 +9,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Component
-public class LoginInterceptor implements HandlerInterceptor{
-    
+public class LoginInterceptor implements HandlerInterceptor {
+    // 拦截器也由 Spring 管理，所以可以注入 JwtUtil 来解析 Token
+    private final JwtUtil jwtUtil;
+
+    // 构造器注入：创建 LoginInterceptor 时，Spring 会把 JwtUtil 传进来
+    // 把外面Spring传进来的jwtUtile保存到这个类里面的jwtUtile
+    public LoginInterceptor(JwtUtil jwtUtil) {
+        this.jwtUtil = jwtUtil;
+    }
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response,Object handler)throws Exception {
         //1、取Authorization头
@@ -29,7 +37,8 @@ public class LoginInterceptor implements HandlerInterceptor{
 
         //4、验证Token(篡改、过期都会抛异常)
         try{
-            Long userId = JwtUtil.getUserId(token); // 用刚写的工具类解析
+            // 解析 Token 中的 userId，后续 Controller 可以通过 @RequestAttribute 获取
+            Long userId = jwtUtil.getUserId(token); // 用刚写的工具类解析
             request.setAttribute("userId", userId); //把userId暂存起来，Controller里能拿到
             return true;
         } catch (Exception e) {

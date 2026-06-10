@@ -48,12 +48,26 @@ public class RedisService {
     }
 
     //增加热度，浏览一次增加1热度
-    public void incrHot(Long articleId) {
-        redisTemplate.opsForZSet().incrementScore("article:hot", articleId.toString(), 1);
+    // 通用热度加分方法：浏览传 1，点赞传 3，后续评论/收藏也能复用
+    public void increaseHot(Long articleId,double score) {
+        redisTemplate.opsForZSet().incrementScore("article:hot", articleId.toString(), score);
     }
 
     //获取文章热度集合
     public Set<ZSetOperations.TypedTuple<String>> getHotList(int topN) {
         return redisTemplate.opsForZSet().reverseRangeWithScores("article:hot", 0, topN - 1);
+    }
+
+    public void deleteArticleData(Long articleId) {
+        // 删除文章后同步清理 Redis 中这篇文章的浏览量、点赞集合和热榜成员
+        redisTemplate.delete("article:" + articleId + ":views");
+        redisTemplate.delete("article:" + articleId + ":likes");
+        redisTemplate.opsForZSet().remove("article:hot", articleId.toString());
+    }
+
+    public boolean markMessageProcessed(String messageId) {
+        // Redis Set 天然去重：第一次 add 返回 1，重复 add 返回 0，可用来判断 MQ 消息是否已处理过。
+        Long addCount = redisTemplate.opsForSet().add("mq:processed:article_publish", messageId);
+        return addCount != null && addCount == 1;
     }
 }

@@ -2,9 +2,9 @@ spring:
   application:
     name: bit-forum-spring
   datasource:
-    url: jdbc:mysql://localhost:3306/bit_forum?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
-    username: root
-    password: root
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/bit_forum?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
@@ -13,9 +13,19 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: guest
-    password: guest
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+  # 本地库已经手工建过表时，允许 Flyway 先建立历史表并接管现有 schema
+  # 全新数据库仍会按 db/migration 下的 V1、V2... 脚本自动初始化
+  flyway:
+    baseline-on-migrate: true
 jwt:
-  secret: bit-forum-secret-key-2026-must-256-bit!!
-  expiration: 604800000
-
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION:604800000}

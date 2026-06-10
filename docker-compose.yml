@@ -1,27 +1,37 @@
 services:
   mysql:
     image: mysql:8.0
+    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: bit_forum
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bit_forum}
     ports:
+      # 左边 3306 是宿主机端口，右边 3306 是容器内 MySQL 端口
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
-  
+      # redis:
+  #   image: redis:7-alpine
+
   rabbitmq:
    image: rabbitmq:3-management
+   restart: unless-stopped
+   environment:
+      RABBITMQ_DEFAULT_USER: ${SPRING_RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${SPRING_RABBITMQ_PASSWORD}
    ports:
       - "5672:5672"
       - "15672:15672"
   
   app:
     build: .
+    restart: unless-stopped
     ports:
       - "8080:8080"
     depends_on: 
@@ -29,9 +39,17 @@ services:
       - redis
       - rabbitmq
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/bit_forum?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
+      # app 和 mysql 在同一个 Compose 网络里，所以后端容器用服务名 mysql + 容器端口 3306 访问数据库
+      # allowPublicKeyRetrieval=true 用来解决 MySQL 8 在容器环境下可能出现的 Public Key Retrieval is not allowed
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/bit_forum?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME}
+      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-604800000}
 
 volumes:
   mysql-data:

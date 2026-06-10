@@ -8,10 +8,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.bitforum.common.Result;
+import com.bitforum.dto.CommentPublishRequest;
 import com.bitforum.entity.Comment;
 import com.bitforum.service.CommentService;
+
+import jakarta.validation.Valid;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 
 
@@ -25,9 +30,13 @@ public class CommentController {
     @PostMapping("/publish")
     public Result<String> publish(
             @RequestAttribute("userId") Long userId,
-            @RequestParam Long articleId,
-            @RequestParam String content) {
-        commentService.publish(userId, articleId, content);
+            @Valid @RequestBody CommentPublishRequest request) {
+        // Service 负责校验文章是否存在；Controller 根据结果返回接口响应
+        // userId 来自登录拦截器，articleId 和 content 来自评论发布 DTO
+        boolean success = commentService.publish(userId, request.getArticleId(),request.getContent());
+        if (!success) {
+            return Result.fail("文章不存在");
+        }
         return Result.ok("评论发布成功", null);
     }
         

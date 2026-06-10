@@ -1,4 +1,5 @@
 HELP.md
+简历描述.md
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -38,3 +39,5 @@ mysql-data/
 ### 敏感文件 ###
 *.log
 .env
+.env.*
+!.env.example

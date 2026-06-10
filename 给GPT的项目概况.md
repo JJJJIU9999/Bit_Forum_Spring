@@ -1,0 +1,156 @@
+# 比特论坛项目概况
+
+## 1. 项目一句话介绍
+
+这是一个基于 Spring Boot 3 的轻量级论坛后端项目，从早期 JDBC 版本升级为 Spring Boot 版本，主要实现用户注册登录、文章发布、评论、浏览量、点赞去重、热门文章排行、RabbitMQ 异步通知和 Docker Compose 部署。
+
+项目目标不是做一个复杂社区产品，而是完整练习 Java 后端开发中的接口设计、数据库持久化、认证鉴权、缓存设计、消息队列、部署和自动化测试。
+
+## 2. 技术栈
+
+| 类别 | 技术 |
+| --- | --- |
+| 语言 | Java 17 |
+| 框架 | Spring Boot 3.4.5 |
+| ORM | MyBatis-Plus 3.5.9 |
+| 数据库 | MySQL 8.0 |
+| 数据库迁移 | Flyway |
+| 缓存 | Redis 7 |
+| 消息队列 | RabbitMQ 3 |
+| 认证 | JWT + BCrypt |
+| 参数校验 | Jakarta Validation |
+| 测试 | JUnit 5 + Spring Boot Test + Mockito |
+| 部署 | Docker + Docker Compose |
+
+## 3. 核心功能
+
+### 用户模块
+
+- 支持用户注册和登录。
+- 注册时使用 BCrypt 存储密码哈希，不保存明文密码。
+- 注册接口返回 `UserResponse`，避免把 `password` 字段暴露给前端。
+- 登录成功后生成 JWT，后续写操作通过 `Authorization: Bearer <token>` 认证。
+
+### 文章模块
+
+- 支持文章发布、修改、删除、详情查询、全部列表和分页查询。
+- 发布文章时，作者 ID 不由前端传入，而是从 JWT 拦截器解析出的 `userId` 获取。
+- 修改和删除文章时会校验当前登录用户是否为文章作者。
+- 删除文章时会同步清理文章下的评论和 Redis 中的浏览量、点赞、热榜数据。
+
+### 评论模块
+
+- 支持发布评论和按文章查询评论。
+- 发布评论前会先校验文章是否存在，避免给不存在的文章插入脏评论。
+
+### Redis 模块
+
+- 使用 String 存储文章浏览量。
+- 使用 Set 存储文章点赞用户，天然实现同一用户不能重复点赞。
+- 使用 ZSet 存储热门文章分数，浏览文章加 1 分，点赞文章加 3 分。
+- 使用 Set 存储已处理过的 RabbitMQ 消息 ID，实现消费者幂等。
+
+### RabbitMQ 模块
+
+- 文章发布成功后发送结构化消息 `ArticlePublishMessage`。
+- 消息包含 `messageId`、`articleId`、`userId`、`title`、`publishTime`。
+- 使用 DirectExchange 和 routing key 显式路由到文章发布队列。
+- 生产者开启 ConfirmCallback，确认消息是否到达 Broker。
+- 生产者开启 ReturnsCallback，确认消息是否成功路由到队列。
+- 消费者使用手动 ACK，成功后 `basicAck`，失败后 `basicNack(requeue=false)`。
+- 普通队列配置 DLX/DLQ，失败消息进入死信队列，方便后续排查或人工补偿。
+
+## 4. 接口设计特点
+
+- 用户注册、登录、文章发布、文章更新、评论发布都使用 Request DTO 接收 JSON 请求体。
+- 使用 `@Valid` 和 Jakarta Validation 做参数校验。
+- 写接口通过登录拦截器获取当前用户身份，不信任前端传来的用户 ID。
+- 使用统一返回结构 `Result<T>`，包含 `code`、`message`、`data`。
+
+## 5. 数据库设计
+
+项目通过 Flyway 初始化三张核心业务表：
+
+- `user_info`：用户表，保存用户名、密码哈希、头像、创建时间。
+- `article`：文章表，保存标题、内容、作者 ID、浏览量、点赞数、创建和更新时间。
+- `comment`：评论表，保存评论内容、用户 ID、文章 ID、父评论 ID、创建时间。
+
+当前项目中的浏览量和点赞数主要由 Redis 实时维护，数据库字段可作为基础字段或后续落库扩展点。
+
+## 6. 部署方式
+
+项目支持 Docker Compose 启动完整环境，包括：
+
+- MySQL
+- Redis
+- RabbitMQ
+- Spring Boot 后端服务
+
+后端容器通过服务名访问中间件：
+
+- MySQL：`mysql:3306`
+- Redis：`redis:6379`
+- RabbitMQ：`rabbitmq:5672`
+
+Dockerfile 使用多阶段构建：第一阶段用 Maven 镜像从源码打包，第二阶段用 JRE 镜像运行最终 JAR。
+
+## 7. 自动化测试
+
+项目当前有 11 个测试，覆盖重点包括：
+
+- Spring Boot 上下文启动。
+- 用户注册和登录参数校验。
+- 登录成功返回 token 和用户基本信息。
+- 文章发布后入库并发送 RabbitMQ 消息。
+- 非作者不能删除文章。
+- 不存在文章不能发布评论。
+- Redis 点赞去重。
+- Redis ZSet 热榜排序。
+- RabbitMQ 消费者重复消息会 ACK 并跳过。
+- RabbitMQ 消息幂等处理。
+
+最近一次验证结果：
+
+```text
+mvn test
+Tests run: 11, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+## 8. 项目亮点
+
+1. 从 JDBC 版本升级到 Spring Boot 版本，体现了技术演进和重构能力。
+2. 接口层使用 DTO 和参数校验，避免直接暴露数据库实体。
+3. 使用 BCrypt 保护密码存储，注册响应不返回密码字段。
+4. 使用 JWT 拦截器实现登录态校验，并把用户身份传递给业务接口。
+5. 使用 Redis String、Set、ZSet 分别处理浏览量、点赞去重和热门排行。
+6. 使用 RabbitMQ 解耦文章发布后的异步通知逻辑。
+7. RabbitMQ 链路补充了 Confirm、Returns、手动 ACK、幂等和 DLQ，可靠性设计比较完整。
+8. 使用 Flyway 管理数据库初始化脚本，增强新环境部署可信度。
+9. 使用 Docker Compose 编排 MySQL、Redis、RabbitMQ 和后端服务。
+10. 有针对核心业务风险点的自动化测试，不只是空的 contextLoads。
+
+## 9. 当前仍可优化的地方
+
+- `README.md` 和 `docker-compose.yml` 中 MySQL 宿主机端口描述需要统一，目前文档里写过 `3307`，但 Compose 实际配置是 `3306:3306`。
+- 测试目前依赖本机 MySQL、Redis、RabbitMQ，后续可以引入 Testcontainers 或测试 profile，降低环境依赖。
+- 接口 HTTP 状态码目前主要通过统一返回体里的 `code` 表达，后续可以进一步规范为真实 HTTP 状态码。
+- 文章浏览量和点赞数当前主要在 Redis 中，后续可以设计定时落库或异步落库。
+- 后续如果要继续扩展，可以加入权限角色、搜索、用户主页、评论回复树、限流、接口文档和监控告警。
+
+## 10. 面试讲法
+
+可以这样概括：
+
+> 我做了一个 Spring Boot 论坛后端项目，核心功能包括用户登录注册、文章发布、评论、Redis 浏览量和点赞去重、Redis ZSet 热门排行、RabbitMQ 异步通知以及 Docker Compose 部署。后续我重点补强了项目质量，比如注册接口不返回密码哈希、JWT 配置外置、写接口通过拦截器校验登录态、评论和点赞前校验文章存在、删除文章时清理评论和 Redis 数据、RabbitMQ 使用 Confirm/Returns/手动 ACK/幂等/DLQ 提高可靠性，并用 Flyway 和自动化测试提高项目可部署性和可验证性。
+
+如果面试官追问，优先展开这几条：
+
+- JWT 登录认证链路。
+- BCrypt 为什么比明文密码安全。
+- Redis Set 如何实现点赞去重。
+- Redis ZSet 如何实现热门文章排行。
+- RabbitMQ 为什么要用 Confirm、Returns、手动 ACK 和 DLQ。
+- 删除文章时为什么要清评论和 Redis。
+- Docker Compose 如何让项目在新环境跑起来。
+- 当前测试覆盖了哪些核心风险。

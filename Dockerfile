@@ -1,14 +1,26 @@
-# 1、地基：拿一个装了JDK 17 的基础镜像
-FROM eclipse-temurin:17-jdk
+# 第一阶段：用 Maven 镜像在容器里从源码打包项目
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
 
-# 2、工作目录：容器里的所有操作都在/app 下进行
 WORKDIR /app
 
-# 3、搬东西：把本地打包好的JAR复制到容器里
-COPY target/bit-forum-spring-0.0.1-SNAPSHOT.jar app.jar
+# 先复制 pom.xml，方便 Docker 缓存依赖下载层
+COPY pom.xml .
+COPY maven-settings.xml /root/.m2/settings.xml
 
-# 4、开门：告诉外界容器会监听8080端口
+# 再复制源码
+COPY src ./src
+
+# 打包项目，跳过测试；测试仍然在本机用 mvn test 单独跑
+RUN mvn clean package -DskipTests
+
+# 第二阶段：用更轻量的 JRE 镜像运行 JAR
+FROM eclipse-temurin:17-jre
+
+WORKDIR /app
+
+# 从 builder 阶段复制打包好的 JAR
+COPY --from=builder /app/target/bit-forum-spring-0.0.1-SNAPSHOT.jar app.jar
+
 EXPOSE 8080
 
-# 5、启动：容器一运行就执行这个命令
-ENTRYPOINT [ "java","-jar","app.jar" ]
+ENTRYPOINT ["java", "-jar", "app.jar"]

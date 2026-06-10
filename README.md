@@ -1,181 +1,329 @@
-# 比特讲坛 — 轻量级论坛系统
+# 比特论坛 - Spring Boot 轻量级论坛系统
 
 ## 项目简介
 
-这是一个讨论 AI 新技术的论坛系统，用来让用户交流 Agent、LLM、Token 等前沿话题。个人学习项目，从零开始跟着"比特讲坛"路线图搭建，涵盖 Java 后端主流技术栈。
+这是一个基于 Spring Boot 3 的轻量级论坛系统，核心功能包括用户注册登录、文章发布、评论、浏览量统计、点赞去重、热门排行、RabbitMQ 异步通知和 Docker Compose 部署。
+
+项目从 JDBC 版本升级到 Spring Boot 版本，重点练习了接口开发、前后端联调、MySQL 持久化、Redis 缓存设计、RabbitMQ 异步解耦、Docker 部署和常见质量问题修复。
 
 ## 技术栈
 
 | 类别 | 技术 |
-|------|------|
+| --- | --- |
 | 语言 | Java 17 |
 | 框架 | Spring Boot 3.4.5 |
-| 构建 | Maven |
-| ORM | MyBatis-Plus 3.5.9 + Lombok |
+| ORM | MyBatis-Plus 3.5.9 |
 | 数据库 | MySQL 8.0 |
+| 数据库迁移 | Flyway |
 | 缓存 | Redis 7 |
 | 消息队列 | RabbitMQ 3 |
 | 认证 | JWT + BCrypt |
+| 参数校验 | Jakarta Validation |
+| 测试 | JUnit 5 + Spring Boot Test + Mockito |
 | 部署 | Docker + Docker Compose |
 
-开发过程中曾用多线程 + 线程池实现异步，后升级为 RabbitMQ 消息队列，实现了更好的解耦和消息持久化。
+## 核心功能
 
-## 功能清单
-
-- 用户注册 / 登录（BCrypt 密码加密 + JWT 令牌认证）
-- 文章发布、列表、详情
-- 文章浏览量统计（Redis String INCR）
-- 文章点赞 / 取消点赞（Redis Set 去重，防止重复点赞）
-- 热门文章排行（加权公式：浏览量 + 点赞数 × 3）
-- 文章编辑、删除（权限校验：只能操作自己的文章）
-- 评论发布、按文章查询
-- JWT 拦截器自动认证，写操作受保护
-- 全局异常处理 + 参数校验（@Valid）
-- RabbitMQ 异步通知（文章发布后异步处理）
-- Docker Compose 一键启动全栈
-
-## 数据库表
-
-| 表名 | 说明 |
-|------|------|
-| `user_info` | 用户（id, username, password, avatar, create_time） |
-| `article` | 文章（id, title, content, user_id, view_count, like_count, create_time） |
-| `comment` | 评论（id, content, user_id, article_id, parent_comment_id, create_time） |
+- 用户注册、登录：使用 BCrypt 存储密码哈希，登录成功后返回 JWT。
+- 接口安全：注册接口返回 `UserResponse`，不直接返回 `User` 实体和密码字段。
+- JWT 认证：写操作通过拦截器校验 `Authorization: Bearer <token>`。
+- 文章管理：发布、编辑、删除、详情、列表、分页查询。
+- 数据一致性：浏览、点赞、评论前校验文章存在；删除文章时清理评论和 Redis 数据。
+- 评论功能：发布评论、按文章查询评论。
+- Redis 浏览量：使用 String 记录文章浏览量。
+- Redis 点赞去重：使用 Set 防止同一用户重复点赞。
+- Redis 热门排行：使用 ZSet 按热度分数维护热门文章。
+- RabbitMQ 异步通知：文章发布后发送结构化消息 `ArticlePublishMessage`。
+- RabbitMQ 可靠性：生产者 Confirm/Returns、消费者手动 ACK、Redis 幂等、DLX/DLQ 失败兜底。
+- Docker Compose：一键启动 MySQL、Redis、RabbitMQ 和后端服务。
 
 ## 项目结构
 
-```
+```text
 src/main/java/com/bitforum/
-├── BitForumSpringApplication.java    ← 启动类
-├── common/
-│   ├── Result.java                   ← 统一返回格式 {code, message, data}
-│   └── HotArticle.java               ← 热门文章 DTO
-├── config/
-│   ├── RabbitMQConfig.java           ← 消息队列声明
-│   └── WebMvcConfig.java             ← 拦截器注册
-├── controller/
-│   ├── UserController.java           ← 用户接口
-│   ├── ArticleController.java        ← 文章接口
-│   └── CommentController.java        ← 评论接口
-├── entity/
-│   ├── User.java
-│   ├── Article.java
-│   └── Comment.java
-├── exception/
-│   └── GlobalExceptionHandler.java   ← 全局异常处理
-├── interceptor/
-│   └── LoginInterceptor.java         ← JWT 认证拦截器
-├── mapper/
-│   ├── UserMapper.java
-│   ├── ArticleMapper.java
-│   └── CommentMapper.java
-├── service/
-│   ├── UserService.java              ← 注册、登录
-│   ├── ArticleService.java           ← 文章发布、查询
-│   ├── CommentService.java           ← 评论发布、查询
-│   ├── RedisService.java             ← 浏览量、点赞、排行
-│   └── NotificationListener.java     ← RabbitMQ 消费者
-└── util/
-    └── JwtUtil.java                  ← JWT 生成、解析、验证
+├── common/                 # 统一返回结果、热门文章返回对象
+├── config/                 # Web、JWT、MyBatis-Plus、RabbitMQ 配置
+├── controller/             # 用户、文章、评论接口
+├── dto/                    # Request / Response DTO
+├── entity/                 # 数据库实体
+├── exception/              # 全局异常处理
+├── interceptor/            # JWT 登录拦截器
+├── mapper/                 # MyBatis-Plus Mapper
+├── message/                # RabbitMQ 消息对象
+├── service/                # 核心业务逻辑
+└── util/                   # JWT 工具类
 ```
 
 ## 快速启动
 
-### 前置要求
+### 方式一：Docker Compose 启动完整环境
 
-- Docker Desktop
+前置要求：
 
-### 步骤
+- Docker Desktop 已启动。
+- 本机 `8080`、`3306`、`6379`、`5672`、`15672` 端口没有被占用。
 
-```bash
-# 1. 克隆项目
-git clone <仓库地址>
-cd bit-forum-spring
+启动命令：
 
-# 2. 一键启动（MySQL + Redis + RabbitMQ + Spring Boot）
-docker compose up
+```powershell
+cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring
+docker compose up --build
 ```
 
-首次启动会自动拉取镜像并构建，启动后访问 `http://localhost:8080`。
+启动后访问：
 
-### 测试
+| 服务 | 地址 |
+| --- | --- |
+| 后端接口 | `http://localhost:8080` |
+| RabbitMQ 管理台 | `http://localhost:15672` |
+| MySQL 宿主机端口 | `localhost:3306` |
+| Redis 宿主机端口 | `localhost:6379` |
 
-**方式一：Thunder Client / Postman**
+RabbitMQ 管理台账号密码从本地 `.env` 读取：
 
-1. `POST http://localhost:8080/api/user/register` — 注册一个账号（Body 选 form，填 `username` 和 `password`）
-2. `POST http://localhost:8080/api/user/login` — 登录，返回的 JSON 中复制 `data.token` 的值
-3. `POST http://localhost:8080/api/article/publish` — 发布文章：
-   - Headers 加 `Authorization: Bearer <第 2 步的 token>`
-   - Body 选 JSON，填 `{"title":"测试文章","content":"Hello Docker"}`
-4. `GET http://localhost:8080/api/article/listAll` — 查看所有文章，确认刚才发的文章已入库
-5. `GET http://localhost:8080/api/article/view?articleId=1` — 提高浏览量
-6. `POST http://localhost:8080/api/article/like` — 点赞（需带 Token，参数 `articleId=1`）
-7. `GET http://localhost:8080/api/article/hot` — 查看热门排行
-
-**方式二：curl**
-
-```bash
-# 注册
-curl -X POST http://localhost:8080/api/user/register \
-  -d "username=test&password=1234"
-
-# 登录
-curl -X POST http://localhost:8080/api/user/login \
-  -d "username=test&password=1234"
-
-# 发布文章（<TOKEN> 替换为上一步返回的 token）
-curl -X POST http://localhost:8080/api/article/publish \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -d '{"title":"Hello","content":"我的第一篇文章"}'
+```text
+见 `.env.example`
 ```
 
-## API 接口文档
+说明：
 
-**通用说明：** 返回格式为 `{"code":200,"message":"操作成功","data":{...}}`。需要认证的接口在 Header 加 `Authorization: Bearer <Token>`。
+- Compose 内部后端服务通过 `mysql:3306` 访问 MySQL。
+- 宿主机访问 Compose 里的 MySQL 使用 `localhost:3306`。
+- 运行 Docker Compose 前，先参考 `.env.example` 创建本地 `.env`，不要提交真实 `.env`。
+- Flyway 会根据 `src/main/resources/db/migration` 下的脚本初始化数据库结构。
 
-### 用户
+### 方式二：本地 Maven 启动后端
 
-| 方法 | URL | 认证 | 参数 | 说明 |
-|------|-----|------|------|------|
-| POST | `/api/user/register` | 否 | `username` `password` | 注册 |
-| POST | `/api/user/login` | 否 | `username` `password` | 登录，返回 JWT Token |
+前置要求：
 
-### 文章
+- 本机已启动 MySQL、Redis、RabbitMQ。
+- MySQL 中存在 `bit_forum` 数据库。
+- `application.yml` 中的连接配置和本机环境一致。
 
-| 方法 | URL | 认证 | 参数 | 说明 |
-|------|-----|------|------|------|
-| POST | `/api/article/publish` | 是 | Body JSON `{"title":"...","content":"..."}` | 发布文章 |
-| GET | `/api/article/listAll` | 否 | — | 全部文章列表 |
-| GET | `/api/article/detail` | 否 | `articleId` | 文章详情（含浏览量、点赞数） |
-| GET | `/api/article/view` | 否 | `articleId` | 浏览量 +1 |
-| PUT | `/api/article/update` | 是 | `articleId` `newTitle` `newContent` | 编辑文章（仅作者） |
-| DELETE | `/api/article/delete` | 是 | `articleId` | 删除文章（仅作者） |
-| POST | `/api/article/like` | 是 | `articleId` | 点赞 |
-| POST | `/api/article/unlike` | 是 | `articleId` | 取消点赞 |
-| GET | `/api/article/hot` | 否 | — | 热门排行（公式：浏览量 + 点赞 × 3） |
+启动命令：
 
-### 评论
-
-| 方法 | URL | 认证 | 参数 | 说明 |
-|------|-----|------|------|------|
-| POST | `/api/comment/publish` | 是 | `articleId` `content` | 发布评论 |
-| GET | `/api/comment/listAll` | 否 | `articleId` | 某篇文章的评论列表 |
-
-### curl 示例
-
-```bash
-# 注册
-curl -X POST http://localhost:8080/api/user/register \
-  -d "username=test&password=1234"
-
-# 登录
-curl -X POST http://localhost:8080/api/user/login \
-  -d "username=test&password=1234"
-
-# 发布文章（<TOKEN> 替换为上一步返回的 token）
-curl -X POST http://localhost:8080/api/article/publish \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -d '{"title":"Hello","content":"我的第一篇文章"}'
+```powershell
+cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring
+mvn spring-boot:run
 ```
+
+运行测试：
+
+```powershell
+mvn test
+```
+
+## 接口验证流程
+
+下面请求体都使用 JSON。需要登录的接口必须在 Header 中携带：
+
+```text
+Authorization: Bearer <token>
+```
+
+### 1. 注册
+
+```http
+POST /api/user/register
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "testuser",
+  "password": "123456"
+}
+```
+
+注册成功后返回用户基础信息，不返回密码哈希。
+
+### 2. 登录
+
+```http
+POST /api/user/login
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "testuser",
+  "password": "123456"
+}
+```
+
+登录成功后从 `data.token` 中复制 JWT。
+
+### 3. 发布文章
+
+```http
+POST /api/article/publish
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+```json
+{
+  "title": "第一篇文章",
+  "content": "这是文章内容"
+}
+```
+
+发布成功后会保存文章，并发送 RabbitMQ 异步通知消息。
+
+### 4. 查看分页文章
+
+```http
+GET /api/article/page?pageNum=1&pageSize=10
+```
+
+分页结果中包含 `records`、`total`、`pages`、`current`、`size` 等信息。
+
+### 5. 查看文章详情
+
+```http
+GET /api/article/detail?articleId=1
+```
+
+### 6. 浏览文章
+
+```http
+GET /api/article/view?articleId=1
+```
+
+浏览前会先校验文章存在，然后 Redis 浏览量加 1，热门分数加 1。
+
+### 7. 点赞文章
+
+```http
+POST /api/article/like?articleId=1
+Authorization: Bearer <token>
+```
+
+点赞前会先校验文章存在，然后 Redis Set 记录用户点赞，热门分数加 3。
+
+### 8. 查看热门文章
+
+```http
+GET /api/article/hot
+```
+
+热门排行从 Redis ZSet 读取，不再遍历 MySQL 全量文章计算。
+
+### 9. 发布评论
+
+```http
+POST /api/comment/publish
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+```json
+{
+  "articleId": 1,
+  "content": "这是一条评论"
+}
+```
+
+评论前会先校验文章存在，避免产生脏评论。
+
+## API 总览
+
+### 用户接口
+
+| 方法 | 地址                 | 是否登录 | 请求方式  |
+| ---- | -------------------- | -------- | --------- |
+| POST | `/api/user/register` | 否       | JSON Body |
+| POST | `/api/user/login`    | 否       | JSON Body |
+
+### 文章接口
+
+| 方法   | 地址                                         | 是否登录 | 说明                   |
+| ------ | -------------------------------------------- | -------- | ---------------------- |
+| POST   | `/api/article/publish`                       | 是       | 发布文章               |
+| PUT    | `/api/article/update`                        | 是       | 修改文章，仅作者可操作 |
+| DELETE | `/api/article/delete?articleId=1`            | 是       | 删除文章，仅作者可操作 |
+| GET    | `/api/article/listAll`                       | 否       | 查询全部文章           |
+| GET    | `/api/article/page?pageNum=1&pageSize=10`    | 否       | 分页查询文章           |
+| GET    | `/api/article/detail?articleId=1`            | 否       | 查询文章详情           |
+| GET    | `/api/article/view?articleId=1`              | 否       | 浏览文章               |
+| POST   | `/api/article/like?articleId=1`              | 是       | 点赞                   |
+| POST   | `/api/article/unlike?articleId=1`            | 是       | 取消点赞               |
+| GET    | `/api/article/hot`                           | 否       | 热门排行               |
+
+文章更新请求体：
+
+```json
+{
+  "articleId": 1,
+  "title": "修改后的标题",
+  "content": "修改后的内容"
+}
+```
+
+### 评论接口
+
+| 方法 | 地址                                    | 是否登录 | 说明         |
+| ---- | --------------------------------------- | -------- | ------------ |
+| POST | `/api/comment/publish`                  | 是       | 发布评论     |
+| GET  | `/api/comment/listAll?articleId=1`      | 否       | 查询文章评论 |
+
+## RabbitMQ 链路说明
+
+文章发布后的异步链路：
+
+```text
+ArticleService.publish
+  -> RabbitTemplate.convertAndSend(article.exchange, article.publish, ArticlePublishMessage)
+  -> article.publish.queue
+  -> NotificationListener.handlePublish
+```
+
+可靠性设计：
+
+- 生产者开启 `publisher-confirm-type: correlated`，确认消息是否到达 Broker。
+- 生产者开启 `publisher-returns: true` 和 `mandatory: true`，确认消息是否成功路由到队列。
+- 消息体使用 `ArticlePublishMessage`，包含 `messageId`、`articleId`、`userId`、`title`、`publishTime`。
+- 消费者使用手动 ACK，成功后 `basicAck`，失败后 `basicNack(requeue=false)`。
+- 使用 Redis Set 记录已处理的 `messageId`，避免重复消费。
+- 普通队列配置 DLX，失败消息进入 `article.publish.dlq`，由 DLQ 监听器记录日志，方便后续排查和补偿。
+
+## 面试演示流程
+
+建议 5 分钟演示顺序：
+
+1. 运行 `docker compose up --build`，说明 MySQL、Redis、RabbitMQ、后端服务由 Compose 编排。
+2. 注册用户，强调注册响应不返回密码哈希。
+3. 登录拿到 JWT，说明写接口通过拦截器校验登录态。
+4. 发布文章，观察数据库有文章，RabbitMQ 消费者有日志。
+5. 浏览文章和点赞文章，说明 Redis String、Set、ZSet 分别承担浏览量、点赞去重、热门排行。
+6. 发布评论，说明评论前校验文章存在。
+7. 运行 `mvn test`，说明核心业务已经有自动化测试覆盖。
+
+详细讲稿见：[5分钟项目演示稿.md](./5分钟项目演示稿.md)。
+
+面试前最终检查见：[面试前最终验收清单.md](./面试前最终验收清单.md)。
+
+## 常用排查命令
+
+```powershell
+# 查看 Compose 解析后的最终配置
+docker compose config
+
+# 启动并重新构建后端镜像
+docker compose up --build
+
+# 查看容器状态
+docker compose ps
+
+# 单独查看后端日志
+docker compose logs -f app
+
+# 运行自动化测试
+mvn test
+```
+
+## 项目亮点总结
+
+面试中可以这样概括：
+
+> 我做了一个 Spring Boot 论坛项目，从 JDBC 版升级到 Spring Boot 版，实现了用户登录、文章发布、评论、Redis 点赞和浏览量、Redis ZSet 热门排行、RabbitMQ 异步通知以及 Docker Compose 部署。后续我重点补强了安全、数据一致性、接口规范、自动化测试和消息可靠性，比如注册接口不返回密码哈希、JWT 密钥外置、浏览点赞评论前校验文章存在、RabbitMQ 使用 Confirm/Returns、手动 ACK、幂等消费和 DLQ 处理失败消息。
