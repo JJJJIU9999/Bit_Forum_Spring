@@ -2,7 +2,9 @@ package com.bitforum.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
@@ -13,13 +15,15 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.bitforum.config.RabbitMQConfig;
 import com.bitforum.entity.Article;
+import com.bitforum.entity.Comment;
 import com.bitforum.mapper.ArticleMapper;
+import com.bitforum.mapper.CommentMapper;
 import com.bitforum.message.ArticlePublishMessage;
 
 // 启动完整 Spring 容器，让 ArticleService、Mapper、事务等组件按真实项目方式协作
@@ -32,9 +36,13 @@ public class ArticleServiceTest {
     private ArticleService articleService;
     @Autowired
     private ArticleMapper articleMapper;
+    @Autowired
+    private CommentMapper commentMapper;
     // 不真的连接 RabbitMQ，只检查代码有没有调用“发送消息”。
-    @MockBean
+    @MockitoBean
     private RabbitTemplate rabbitTemplate;
+    @MockitoBean
+    private RedisService redisService;
 
     @Test
     void publishShouldSaveArticleAndSendMessage() {
@@ -89,5 +97,30 @@ public class ArticleServiceTest {
         assertEquals("只能删除自己的文章", exception.getMessage());
         // 再查一次数据库，确认权限校验失败后文章没有被误删
         assertNotNull(articleMapper.selectById(article.getId()));
+    }
+
+    @Test
+    void adminShouldDeleteArticleAndCleanRelatedData() {
+        Article article = new Article();
+        article.setTitle("管理员删除文章-" + UUID.randomUUID());
+        article.setContent("管理员删除时应该同时清理评论和 Redis");
+        article.setUserId(30001L);
+        articleMapper.insert(article);
+
+        Comment comment = new Comment();
+        comment.setArticleId(article.getId());
+        comment.setUserId(30002L);
+        comment.setContent("这条评论应该跟随文章一起被删除");
+        comment.setParentCommentId(0L);
+        commentMapper.insert(comment);
+
+        boolean deleted = articleService.deleteByAdmin(article.getId());
+
+        assertTrue(deleted);
+        assertNull(articleMapper.selectById(article.getId()));
+        // 管理员删除文章复用统一清理流程，所以文章下的评论不能继续留在数据库里。
+        assertEquals(0, commentMapper.selectCount(
+                new QueryWrapper<Comment>().eq("article_id", article.getId())));
+        verify(redisService).deleteArticleData(article.getId());
     }
 }

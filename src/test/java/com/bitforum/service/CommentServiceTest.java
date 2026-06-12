@@ -3,6 +3,7 @@ package com.bitforum.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 
@@ -49,4 +50,30 @@ public class CommentServiceTest {
         assertEquals(0L, commentMapper.selectCount(wrapper));
     }
 
+    @Test
+    void adminShouldDeleteExistingComment() {
+        Comment comment = new Comment();
+        comment.setArticleId(40001L);
+        comment.setUserId(40002L);
+        comment.setContent("管理员删除评论测试-" + UUID.randomUUID());
+        comment.setParentCommentId(0L);
+        commentMapper.insert(comment);
+
+        boolean deleted = commentService.deleteByAdmin(comment.getId());
+
+        assertTrue(deleted);
+        // 管理员删除评论后，comment 表中不应该还能查到这条记录。
+        assertNull(commentMapper.selectById(comment.getId()));
+    }
+
+    @Test
+    void adminDeleteShouldReturnFalseWhenCommentNotExists() {
+        Long notExistsCommentId = 99999999L;
+
+        assertNull(commentMapper.selectById(notExistsCommentId));
+
+        boolean deleted = commentService.deleteByAdmin(notExistsCommentId);
+
+        assertFalse(deleted);
+    }
 }
