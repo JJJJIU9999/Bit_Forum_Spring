@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.Comment;
 import com.bitforum.mapper.ArticleMapper;
@@ -56,5 +57,23 @@ public class CommentService {
         QueryWrapper<Comment> wrapper = new QueryWrapper<>();
         wrapper.eq("article_id", articleId);
         commentMapper.delete(wrapper);
+    }
+
+    public Page<Comment> pageComments(long pageNum, long pageSize) {
+        // 管理端查看全部评论，不按某篇文章过滤；按时间倒序更方便优先处理新评论。
+        Page<Comment> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Comment> wrapper = new QueryWrapper<>();
+        wrapper.orderByDesc("create_time");
+        return commentMapper.selectPage(page, wrapper);
+    }
+
+    public boolean deleteByAdmin(Long commentId) {
+        Comment comment = commentMapper.selectById(commentId);
+        if (comment == null) {
+            return false;
+        }
+        // 评论本身是独立记录，管理员删除评论只需要删除 comment 表记录。
+        commentMapper.deleteById(commentId);
+        return true;
     }
 }

@@ -96,6 +96,21 @@ public class ArticleService {
         if (!article.getUserId().equals(userId)) {
             throw new RuntimeException("只能删除自己的文章");
         }
+        deleteArticleWithRelatedData(articleId);
+    }
+
+    @Transactional
+    public boolean deleteByAdmin(Long articleId) {
+        Article article = articleMapper.selectById(articleId);
+        if (article == null) {
+            return false;
+        }
+        // 管理员可以删除任意文章，但删除后的数据一致性规则必须和作者删除保持一致。
+        deleteArticleWithRelatedData(articleId);
+        return true;
+    }
+
+    private void deleteArticleWithRelatedData(Long articleId) {
         // 删除文章是一个完整业务流程：先清评论，再删文章，最后清 Redis 缓存数据
         commentService.deleteByArticleId(articleId);
         articleMapper.deleteById(articleId);

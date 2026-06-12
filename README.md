@@ -27,6 +27,7 @@
 - 用户注册、登录：使用 BCrypt 存储密码哈希，登录成功后返回 JWT。
 - 接口安全：注册接口返回 `UserResponse`，不直接返回 `User` 实体和密码字段。
 - JWT 认证：写操作通过拦截器校验 `Authorization: Bearer <token>`。
+- 管理员权限：`/api/admin/**` 接口会校验 JWT、账号状态和 `ADMIN` 角色。
 - 文章管理：发布、编辑、删除、详情、列表、分页查询。
 - 数据一致性：浏览、点赞、评论前校验文章存在；删除文章时清理评论和 Redis 数据。
 - 评论功能：发布评论、按文章查询评论。
@@ -112,6 +113,39 @@ mvn spring-boot:run
 ```powershell
 mvn test
 ```
+
+### 创建管理员账号（方式 A：手动 SQL）
+
+当前项目不会在代码里硬编码管理员账号。推荐先通过注册接口创建一个普通用户，再手动把这个用户提升为管理员：
+
+```http
+POST /api/user/register
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "admin_user",
+  "password": "123456"
+}
+```
+
+然后连接 MySQL，只修改这个用户的 `role/status`：
+
+```sql
+USE bit_forum;
+
+UPDATE user_info
+SET role = 'ADMIN',
+    status = 1
+WHERE username = 'admin_user';
+
+SELECT id, username, role, status
+FROM user_info
+WHERE username = 'admin_user';
+```
+
+这样密码仍然由注册流程使用 BCrypt 加密保存，SQL 只负责授予管理员身份。
 
 ## 接口验证流程
 
@@ -266,6 +300,25 @@ Authorization: Bearer <token>
 | ---- | --------------------------------------- | -------- | ------------ |
 | POST | `/api/comment/publish`                  | 是       | 发布评论     |
 | GET  | `/api/comment/listAll?articleId=1`      | 否       | 查询文章评论 |
+
+### 管理员接口
+
+管理员接口都需要在 Header 中携带管理员 JWT：
+
+```text
+Authorization: Bearer <admin-token>
+```
+
+| 方法   | 地址                                             | 权限要求 | 说明 |
+| ------ | ------------------------------------------------ | -------- | ---- |
+| GET    | `/api/admin/health`                              | 管理员   | 验证管理员权限链路 |
+| GET    | `/api/admin/article/page?pageNum=1&pageSize=10`  | 管理员   | 分页查询文章 |
+| DELETE | `/api/admin/article/delete?articleId=1`          | 管理员   | 删除任意文章，并清理评论和 Redis 数据 |
+| GET    | `/api/admin/comment/page?pageNum=1&pageSize=10`  | 管理员   | 分页查询评论 |
+| DELETE | `/api/admin/comment/delete?commentId=1`          | 管理员   | 删除任意评论 |
+| GET    | `/api/admin/user/page?pageNum=1&pageSize=10`     | 管理员   | 分页查询用户，响应不包含 `password` |
+| PUT    | `/api/admin/user/disable?userId=2`               | 管理员   | 禁用用户，不能禁用当前管理员自己 |
+| PUT    | `/api/admin/user/enable?userId=2`                | 管理员   | 启用用户 |
 
 ## RabbitMQ 链路说明
 
