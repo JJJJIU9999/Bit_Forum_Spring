@@ -1,0 +1,799 @@
+:root {
+  /* 全局主题色和字体。 */
+  color: #18201c;
+  background: #f4f0e8;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  /* 页面主布局：左侧说明，中间功能区，右侧学习路线。 */
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 560px) minmax(300px, 390px);
+  gap: 28px;
+  align-items: center;
+  padding: 44px;
+  background:
+    linear-gradient(120deg, rgba(47, 104, 80, 0.12), transparent 36%),
+    linear-gradient(320deg, rgba(179, 71, 54, 0.14), transparent 38%),
+    #f4f0e8;
+}
+
+.app-shell.admin-mode {
+  /* 管理员页是表格工作台，需要比普通表单和文章页更宽的中间区域。 */
+  grid-template-columns: minmax(280px, 0.7fr) minmax(720px, 920px) minmax(280px, 340px);
+  gap: 24px;
+}
+
+.hero {
+  /* 左侧项目说明区域。 */
+  max-width: 720px;
+}
+
+.admin-mode .hero {
+  max-width: 560px;
+}
+
+.eyebrow {
+  margin: 0 0 18px;
+  color: #b34736;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  max-width: 680px;
+  color: #18201c;
+  font-size: clamp(40px, 6vw, 82px);
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+.admin-mode h1 {
+  max-width: 560px;
+  font-size: clamp(38px, 4.5vw, 64px);
+}
+
+.summary {
+  max-width: 600px;
+  margin: 28px 0 0;
+  color: #4d5a50;
+  font-size: 18px;
+  line-height: 1.8;
+}
+
+.admin-mode .summary {
+  max-width: 520px;
+  font-size: 16px;
+}
+
+.auth-status {
+  /* 当前登录状态展示区。 */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 34px;
+  color: #4d5a50;
+}
+
+.auth-status div {
+  display: grid;
+  gap: 4px;
+}
+
+.auth-status span {
+  font-size: 14px;
+}
+
+.auth-status strong {
+  color: #18201c;
+  font-size: 20px;
+}
+
+.work-panel,
+.learning-panel {
+  /* 中间功能面板和右侧学习路线共用的容器样式。 */
+  border: 1px solid rgba(24, 32, 28, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.86);
+  box-shadow: 0 24px 70px rgba(24, 32, 28, 0.14);
+}
+
+.work-panel {
+  padding: 26px;
+}
+
+.admin-mode .work-panel {
+  padding: 24px;
+}
+
+.tabs {
+  /* 登录/注册二级切换。 */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #ebe2d4;
+}
+
+.tabs button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4d5a50;
+  font-weight: 700;
+}
+
+.tabs button.active {
+  background: #fffaf1;
+  color: #b34736;
+  box-shadow: 0 8px 24px rgba(24, 32, 28, 0.12);
+}
+
+.top-nav {
+  /* 功能区一级导航：账号、文章、发布、管理。 */
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.top-nav button {
+  min-height: 42px;
+  border: 1px solid rgba(24, 32, 28, 0.12);
+  border-radius: 8px;
+  background: #fffaf1;
+  color: #4d5a50;
+  font-weight: 700;
+}
+
+.top-nav button.active {
+  border-color: rgba(179, 71, 54, 0.45);
+  background: #b34736;
+  color: #fffaf1;
+}
+
+.auth-form {
+  /* 登录、注册、发布文章共用表单布局。 */
+  display: grid;
+  gap: 18px;
+}
+
+.form-heading h2 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.form-heading p {
+  margin: 10px 0 0;
+  color: #607066;
+  line-height: 1.7;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 8px;
+  color: #38443b;
+  font-weight: 700;
+}
+
+.auth-form input,
+.auth-form textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid rgba(24, 32, 28, 0.18);
+  border-radius: 8px;
+  background: #fffaf1;
+  color: #18201c;
+  outline: none;
+}
+
+.auth-form textarea {
+  min-height: 150px;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.auth-form input:focus,
+.auth-form textarea:focus {
+  border-color: rgba(179, 71, 54, 0.7);
+  box-shadow: 0 0 0 4px rgba(179, 71, 54, 0.1);
+}
+
+.primary-button,
+.ghost-button {
+  min-height: 44px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.primary-button {
+  border: 0;
+  background: #b34736;
+  color: #fffaf1;
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.ghost-button {
+  padding: 0 18px;
+  border: 1px solid rgba(24, 32, 28, 0.18);
+  background: rgba(255, 250, 241, 0.7);
+  color: #38443b;
+}
+
+.form-message {
+  min-height: 24px;
+  margin: 0;
+  color: #2f6850;
+  line-height: 1.6;
+}
+
+.content-view {
+  /* 文章列表和详情页共用内容容器。 */
+  display: grid;
+  gap: 18px;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.section-heading p {
+  margin: 8px 0 0;
+  color: #607066;
+  line-height: 1.7;
+}
+
+.section-heading span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #ebe2d4;
+  color: #2f6850;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sub-heading {
+  /* 小区域标题：用于热门文章和评论区。 */
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.sub-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sub-heading span {
+  color: #2f6850;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hot-section {
+  /* 热门文章来自 Redis ZSet，放在分页列表前面方便对比数据来源。 */
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(47, 104, 80, 0.18);
+  border-radius: 8px;
+  background: rgba(235, 226, 212, 0.5);
+}
+
+.hot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.hot-list p {
+  margin: 0;
+  color: #607066;
+}
+
+.hot-item {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid rgba(24, 32, 28, 0.12);
+  border-radius: 8px;
+  background: #fffaf1;
+  color: #18201c;
+  text-align: left;
+}
+
+.hot-item span {
+  color: #b34736;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hot-item strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.article-list {
+  /* 列表过长时只让列表内部滚动，避免整个页面跳动。 */
+  display: grid;
+  gap: 12px;
+  max-height: 500px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.article-item,
+.detail-card {
+  /* 单篇文章卡片和详情卡片的基础视觉样式。 */
+  border: 1px solid rgba(24, 32, 28, 0.12);
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.article-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+}
+
+.article-item span,
+.detail-card span {
+  color: #b34736;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.article-item h3,
+.detail-card h3 {
+  margin: 6px 0 8px;
+  color: #18201c;
+  font-size: 20px;
+}
+
+.article-item p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #607066;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.detail-card {
+  padding: 20px;
+}
+
+.detail-card p {
+  color: #38443b;
+  line-height: 1.8;
+}
+
+.metric-row {
+  /* 详情页下方的浏览、点赞、作者 ID 指标。 */
+  display: grid;
+  grid-template-columns: repeat(3, auto 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(24, 32, 28, 0.12);
+}
+
+.metric-row strong {
+  color: #2f6850;
+  font-size: 22px;
+}
+
+.action-row {
+  /* 详情页文章操作区：点赞和取消点赞都依赖登录后的 JWT。 */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.action-row span {
+  color: #607066;
+  font-size: 14px;
+}
+
+.action-row .primary-button,
+.action-row .ghost-button {
+  min-width: 108px;
+}
+
+.comment-section {
+  /* 评论区独立成块，便于理解“查询评论”和“发表评论”是两条接口链路。 */
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(24, 32, 28, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 250, 241, 0.74);
+}
+
+.comment-form {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-form textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 12px 14px;
+  border: 1px solid rgba(24, 32, 28, 0.18);
+  border-radius: 8px;
+  background: #fffaf1;
+  color: #18201c;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+}
+
+.comment-form textarea:focus {
+  border-color: rgba(179, 71, 54, 0.7);
+  box-shadow: 0 0 0 4px rgba(179, 71, 54, 0.1);
+}
+
+.comment-list {
+  display: grid;
+  gap: 10px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.comment-list > p {
+  margin: 0;
+  color: #607066;
+}
+
+.comment-item {
+  padding: 12px;
+  border: 1px solid rgba(24, 32, 28, 0.1);
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.comment-item div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.comment-item strong {
+  color: #2f6850;
+}
+
+.comment-item span {
+  color: #607066;
+  font-size: 12px;
+}
+
+.comment-item p {
+  margin: 0;
+  color: #38443b;
+  line-height: 1.7;
+}
+
+.pager {
+  /* 文章列表分页按钮区。 */
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: #607066;
+}
+
+.pager button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-view {
+  /* 管理员页面信息密度更高，所以限制内部表格滚动，而不是撑开整个页面。 */
+  min-width: 0;
+}
+
+.admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #ebe2d4;
+}
+
+.admin-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4d5a50;
+  font-weight: 700;
+}
+
+.admin-tabs button.active {
+  background: #fffaf1;
+  color: #b34736;
+  box-shadow: 0 8px 24px rgba(24, 32, 28, 0.12);
+}
+
+.admin-table-wrap {
+  max-height: 430px;
+  overflow: auto;
+  border: 1px solid rgba(24, 32, 28, 0.12);
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.admin-table {
+  width: 100%;
+  min-width: 680px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(24, 32, 28, 0.1);
+  color: #38443b;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.admin-table th {
+  color: #18201c;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.col-id {
+  width: 70px;
+}
+
+.col-small {
+  width: 76px;
+}
+
+.col-role {
+  width: 90px;
+}
+
+.col-date {
+  width: 150px;
+}
+
+.col-action {
+  width: 88px;
+}
+
+.col-title {
+  width: 34%;
+}
+
+.col-content {
+  width: auto;
+}
+
+.mono-cell {
+  color: #607066;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.strong-cell {
+  color: #18201c;
+  font-weight: 700;
+}
+
+.truncate-cell {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.action-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.empty-cell {
+  color: #607066;
+  text-align: center;
+}
+
+.danger-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #8f2f27;
+  color: #fffaf1;
+  font-weight: 700;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.learning-panel {
+  /* 右侧学习路线面板。 */
+  padding: 24px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.panel-header span {
+  color: #2f6850;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.step-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-list li {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 50px;
+  padding: 10px;
+  border: 1px solid rgba(24, 32, 28, 0.1);
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.step-list span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e2d8c8;
+  color: #18201c;
+  font-weight: 700;
+}
+
+.step-list p {
+  margin: 0;
+  color: #38443b;
+  line-height: 1.5;
+}
+
+.step-list .active {
+  border-color: rgba(179, 71, 54, 0.45);
+  background: #fff3e7;
+}
+
+.step-list .active span {
+  background: #b34736;
+  color: white;
+}
+
+@media (max-width: 1180px) {
+  /* 中等屏幕下，把左侧说明放到第一整行。 */
+  .app-shell,
+  .app-shell.admin-mode {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hero {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  /* 手机宽度下改成单列布局。 */
+  .app-shell,
+  .app-shell.admin-mode {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    padding: 28px 18px;
+  }
+
+  h1 {
+    font-size: 42px;
+  }
+
+  .article-item,
+  .section-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .article-item {
+    display: grid;
+  }
+
+  .metric-row {
+    grid-template-columns: auto 1fr;
+  }
+
+  .top-nav,
+  .admin-tabs {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-table {
+    min-width: 640px;
+  }
+}
