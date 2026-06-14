@@ -21,6 +21,7 @@
 | 参数校验 | Jakarta Validation |
 | 测试 | JUnit 5 + Spring Boot Test + Mockito |
 | 部署 | Docker + Docker Compose |
+| 前端演示 | React + Vite + Axios |
 
 ## 核心功能
 
@@ -113,6 +114,39 @@ mvn spring-boot:run
 ```powershell
 mvn test
 ```
+
+### 方式三：启动 React 前端演示页
+
+前置要求：
+
+- 后端已启动在 `http://localhost:8080`。
+- 前端依赖已安装。
+
+第一次进入前端目录时安装依赖：
+
+```powershell
+cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring\frontend
+npm install
+```
+
+启动前端开发服务器：
+
+```powershell
+cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring\frontend
+npm run dev
+```
+
+浏览器访问：
+
+```text
+http://localhost:5173
+```
+
+前端演示页覆盖登录注册、文章列表/详情/发布、点赞、评论、热门文章和管理员页面。
+
+详细启动顺序、演示账号和浏览器验证流程见：
+
+[React Frontend Demo Guide](./docs/phase2-frontend-plan/frontend-demo-guide.md)
 
 ### 创建管理员账号（方式 A：手动 SQL）
 

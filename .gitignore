@@ -36,8 +36,13 @@ build/
 ### Docker ###
 mysql-data/
 
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+
 ### 敏感文件 ###
 *.log
 .env
 .env.*
 !.env.example
+run-local.cmd

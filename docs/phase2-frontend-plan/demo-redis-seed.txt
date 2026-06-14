@@ -1,0 +1,33 @@
+# Bit Forum frontend demo Redis seed commands.
+# Use only when Redis is dedicated to this local project.
+#
+# Option A: clear only known demo keys.
+# Run these commands in redis-cli.
+
+DEL article:hot
+DEL article:1:views article:2:views article:3:views article:4:views article:5:views article:6:views
+DEL article:1:likes article:2:likes article:3:likes article:4:likes article:5:likes article:6:likes
+
+SET article:1:views 128
+SET article:2:views 96
+SET article:3:views 88
+SET article:4:views 64
+SET article:5:views 42
+SET article:6:views 8
+
+SADD article:1:likes 1 2 3
+SADD article:2:likes 1 3
+SADD article:3:likes 2 3
+SADD article:4:likes 2
+SADD article:5:likes 1
+
+ZADD article:hot 137 1
+ZADD article:hot 102 2
+ZADD article:hot 94 3
+ZADD article:hot 67 4
+ZADD article:hot 45 5
+ZADD article:hot 8 6
+
+# Option B: if this Redis DB contains only this project, you can reset everything first:
+# FLUSHDB
+# Then run the SET/SADD/ZADD commands above.
