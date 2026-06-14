@@ -53,18 +53,20 @@ public class RedisServiceTest {
     @Test
     void sameUserLikeSameArticleOnlyCountOnce() {
         // Redis Set 天然去重：同一个 userId 重复 add 到同一个 Set，成员数量仍然是 1
-        redisService.like(articleId, userId);
-        redisService.like(articleId, userId);
+        boolean firstLike = redisService.like(articleId, userId);
+        boolean secondLike = redisService.like(articleId, userId);
 
+        assertTrue(firstLike);
+        assertFalse(secondLike);
         assertEquals(1L, redisService.getLikeCount(articleId));
         assertTrue(redisService.hasLiked(articleId, userId));
     }
 
     @Test
     void hotListShouldReturnHigherScoreArticleFirst() {
-        // 低热度文章加 1 分，高热度文章加 3 分，用这个差异验证 ZSet 会按 score 排序
-        redisService.increaseHot(lowHotArticleId, 1);
-        redisService.increaseHot(highHotArticleId, 3);
+        // 使用足够大的测试分数，避免本地演示数据 article:hot 里已有的热门文章影响断言
+        redisService.increaseHot(lowHotArticleId, 1_000_001);
+        redisService.increaseHot(highHotArticleId, 1_000_003);
 
         // Redis 的 ZSet 查询结果用 Set 承接：每个元素都是一条排行记录，里面同时包含 value 和 score
         // 这里不要命名成 hotList，因为它的实际类型不是 List；叫 hotSet 更容易看出它来自 Redis ZSet
@@ -75,7 +77,7 @@ public class RedisServiceTest {
 
         // value 存的是文章 ID，score 存的是热度分；高热度文章应该排在第一位
         assertEquals(highHotArticleId.toString(), first.getValue());
-        assertEquals(3.0, first.getScore());
+        assertEquals(1_000_003.0, first.getScore());
     }
 
     @Test

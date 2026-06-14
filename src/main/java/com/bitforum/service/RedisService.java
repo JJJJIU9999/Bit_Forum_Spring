@@ -25,9 +25,10 @@ public class RedisService {
         return value == null ? 0L : Long.parseLong(value);
     }
 
-    //文章点赞
-    public void like(Long articleId, Long userId) {
-        redisTemplate.opsForSet().add("article:" + articleId + ":likes", userId.toString());
+    //文章点赞，返回 true 表示这次是第一次点赞；返回 false 表示用户已经点过赞
+    public boolean like(Long articleId, Long userId) {
+        Long addCount = redisTemplate.opsForSet().add("article:" + articleId + ":likes", userId.toString());
+        return addCount != null && addCount == 1;
     }
 
     //取消文章点赞
