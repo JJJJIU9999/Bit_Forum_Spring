@@ -134,11 +134,14 @@ public class ArticleController {
         if (article == null) {
             return Result.fail("文章不存在");
         }
-        redisService.like(articleId, userId);
-        // 点赞比浏览更能代表用户兴趣，所以这里暂时按 3 分计入热榜
-        redisService.increaseHot(articleId,3);
+        boolean liked = redisService.like(articleId, userId);
+        // 只有第一次点赞才给热榜加分；重复点赞不会改变 Redis Set，也不应该重复增加热度
+        if (liked) {
+            redisService.increaseHot(articleId,3);
+        }
         Long count = redisService.getLikeCount(articleId);
-        return Result.ok("点赞成功，当前点赞数量：" + count, null);
+        String message = liked ? "点赞成功，当前点赞数量：" + count : "已经点赞过，当前点赞数量：" + count;
+        return Result.ok(message, null);
     }
 
     //取消点赞操作，把like方法换成unlike方法，其余的逻辑一致
