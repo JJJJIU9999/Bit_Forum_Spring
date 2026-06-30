@@ -64,16 +64,6 @@ function ManageReports({ currentUser }) {
 
       <div className="admin-table-wrap">
         <table className="admin-table">
-          <colgroup>
-            <col className="col-id" />
-            <col className="col-role" />
-            <col className="col-small" />
-            <col className="col-small" />
-            <col className="col-small" />
-            <col className="col-content" />
-            <col className="col-role" />
-            <col className="col-wide-action" />
-          </colgroup>
           <thead>
             <tr><th>ID</th><th>对象</th><th>对象ID</th><th>举报人</th><th>作者</th><th>原因</th><th>状态</th><th>操作</th></tr>
           </thead>

@@ -63,14 +63,6 @@ function AuditArticles({ currentUser }) {
 
       <div className="admin-table-wrap">
         <table className="admin-table">
-          <colgroup>
-            <col className="col-id" />
-            <col className="col-content" />
-            <col className="col-title" />
-            <col className="col-small" />
-            <col className="col-date" />
-            <col className="col-wide-action" />
-          </colgroup>
           <thead>
             <tr><th>ID</th><th>标题</th><th>板块</th><th>作者</th><th>提交时间</th><th>操作</th></tr>
           </thead>
