@@ -5,6 +5,11 @@ export function pageArticles(params = { pageNum: 1, pageSize: 10 }) {
   return request.get('/article/page', { params })
 }
 
+// 基础搜索只查已发布文章，后端使用 MySQL LIKE 查询标题和正文。
+export function searchArticles(params = { pageNum: 1, pageSize: 10 }) {
+  return request.get('/article/search', { params })
+}
+
 // 查询文章详情。后端会把 Redis 中的浏览量、点赞数装进返回数据。
 export function getArticleDetail(articleId) {
   return request.get('/article/detail', {
@@ -29,6 +34,28 @@ export function publishArticle(payload) {
   return request.post('/article/publish', payload)
 }
 
+// 保存草稿，草稿不会进入公开文章列表。
+export function saveDraft(payload) {
+  return request.post('/article/draft', payload)
+}
+
+// 草稿或被驳回文章再次提交审核。
+export function submitArticle(articleId) {
+  return request.post('/article/submit', null, {
+    params: { articleId },
+  })
+}
+
+// 作者查看自己的全部状态文章。
+export function pageMyArticles(params = { pageNum: 1, pageSize: 10 }) {
+  return request.get('/user/articles', { params })
+}
+
+// 我的收藏默认只返回当前用户收藏且仍处于已发布状态的文章。
+export function pageMyFavorites(params = { pageNum: 1, pageSize: 10 }) {
+  return request.get('/user/favorites', { params })
+}
+
 // 修改文章需要登录，且后端会校验只能改自己的文章。
 export function updateArticle(payload) {
   return request.put('/article/update', payload)
@@ -51,6 +78,18 @@ export function likeArticle(articleId) {
 // 取消点赞和点赞的参数结构保持一致。
 export function unlikeArticle(articleId) {
   return request.post('/article/unlike', null, {
+    params: { articleId },
+  })
+}
+
+export function favoriteArticle(articleId) {
+  return request.post('/article/favorite', null, {
+    params: { articleId },
+  })
+}
+
+export function unfavoriteArticle(articleId) {
+  return request.delete('/article/favorite', {
     params: { articleId },
   })
 }

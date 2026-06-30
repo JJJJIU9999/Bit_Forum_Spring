@@ -2,6 +2,7 @@ package com.bitforum.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,9 +14,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.bitforum.entity.Article;
+import com.bitforum.entity.Category;
 import com.bitforum.entity.Comment;
+import com.bitforum.entity.Notification;
 import com.bitforum.mapper.ArticleMapper;
+import com.bitforum.mapper.CategoryMapper;
 import com.bitforum.mapper.CommentMapper;
+import com.bitforum.mapper.NotificationMapper;
 
 @SpringBootTest
 // 测试结束后自动回滚数据库，避免测试评论或测试文章污染本地数据
@@ -27,6 +33,10 @@ public class CommentServiceTest {
     private CommentMapper commentMapper;
     @Autowired
     private ArticleMapper articleMapper;
+    @Autowired
+    private CategoryMapper categoryMapper;
+    @Autowired
+    private NotificationMapper notificationMapper;
 
     @Test
     void publishShouldFailWhenArticleNotExists() {
@@ -48,6 +58,47 @@ public class CommentServiceTest {
         wrapper.eq("content", content);
 
         assertEquals(0L, commentMapper.selectCount(wrapper));
+    }
+
+    @Test
+    void publishOtherUsersArticleCommentShouldCreateNotification() {
+        Article article = createArticle(41001L, ArticleService.STATUS_PUBLISHED);
+
+        boolean success = commentService.publish(41002L, article.getId(), "M4 评论通知");
+
+        assertTrue(success);
+        Notification notification = notificationMapper.selectOne(new QueryWrapper<Notification>()
+                .eq("article_id", article.getId())
+                .eq("type", NotificationService.TYPE_COMMENT)
+                .last("LIMIT 1"));
+        assertNotNull(notification);
+        assertEquals(41001L, notification.getReceiverId());
+        assertEquals(41002L, notification.getSenderId());
+    }
+
+    @Test
+    void publishOwnArticleCommentShouldNotCreateNotification() {
+        Article article = createArticle(41003L, ArticleService.STATUS_PUBLISHED);
+
+        boolean success = commentService.publish(41003L, article.getId(), "M4 自评不通知");
+
+        assertTrue(success);
+        Long count = notificationMapper.selectCount(new QueryWrapper<Notification>()
+                .eq("article_id", article.getId())
+                .eq("type", NotificationService.TYPE_COMMENT));
+        assertEquals(0L, count);
+    }
+
+    @Test
+    void publishCommentShouldFailWhenArticleIsNotPublished() {
+        Article article = createArticle(41004L, ArticleService.STATUS_DRAFT);
+
+        boolean success = commentService.publish(41005L, article.getId(), "M4 草稿评论失败");
+
+        assertFalse(success);
+        Long count = commentMapper.selectCount(new QueryWrapper<Comment>()
+                .eq("article_id", article.getId()));
+        assertEquals(0L, count);
     }
 
     @Test
@@ -75,5 +126,17 @@ public class CommentServiceTest {
         boolean deleted = commentService.deleteByAdmin(notExistsCommentId);
 
         assertFalse(deleted);
+    }
+
+    private Article createArticle(Long userId, String status) {
+        Category category = categoryMapper.selectList(null).get(0);
+        Article article = new Article();
+        article.setTitle("M4-cmt-" + UUID.randomUUID());
+        article.setContent("M4 评论通知测试文章");
+        article.setUserId(userId);
+        article.setCategoryId(category.getId());
+        article.setStatus(status);
+        articleMapper.insert(article);
+        return article;
     }
 }

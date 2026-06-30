@@ -1,10 +1,30 @@
-import { useState } from 'react'
-import { publishArticle } from '../api/articleApi.js'
+import { useEffect, useState } from 'react'
+import { publishArticle, saveDraft } from '../api/articleApi.js'
+import { listCategories } from '../api/categoryApi.js'
 
 function PublishArticle({ currentUser, onPublished }) {
-  const [form, setForm] = useState({ title: '', content: '' })
+  const [form, setForm] = useState({ title: '', content: '', categoryId: '' })
+  const [categories, setCategories] = useState([])
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [draftLoading, setDraftLoading] = useState(false)
+
+  useEffect(() => {
+    async function loadCategories() {
+      try {
+        const result = await listCategories()
+        const list = result.data || []
+        setCategories(list)
+        if (list.length > 0) {
+          setForm((current) => ({ ...current, categoryId: String(list[0].id) }))
+        }
+      } catch (error) {
+        setMessage(error.message)
+      }
+    }
+
+    loadCategories()
+  }, [])
 
   function updateField(event) {
     const { name, value } = event.target
@@ -15,7 +35,12 @@ function PublishArticle({ currentUser, onPublished }) {
     event.preventDefault()
 
     if (!currentUser) {
-      setMessage('请先登录，再发布文章。')
+      setMessage('请先登录，再提交审核。')
+      return
+    }
+
+    if (!form.categoryId) {
+      setMessage('请选择文章板块。')
       return
     }
 
@@ -23,10 +48,13 @@ function PublishArticle({ currentUser, onPublished }) {
     setMessage('')
 
     try {
-      // 这里只提交 title/content。后端会从 JWT 中读取真正的 userId。
-      await publishArticle(form)
-      setForm({ title: '', content: '' })
-      setMessage('发布成功，正在返回文章列表。')
+      await publishArticle({
+        title: form.title,
+        content: form.content,
+        categoryId: Number(form.categoryId),
+      })
+      setForm((current) => ({ title: '', content: '', categoryId: current.categoryId }))
+      setMessage('提交审核成功，可在我的文章查看状态。')
       onPublished()
     } catch (error) {
       setMessage(error.message)
@@ -35,12 +63,53 @@ function PublishArticle({ currentUser, onPublished }) {
     }
   }
 
+  async function handleSaveDraft() {
+    if (!currentUser) {
+      setMessage('请先登录，再保存草稿。')
+      return
+    }
+
+    if (!form.categoryId) {
+      setMessage('请选择文章板块。')
+      return
+    }
+
+    setDraftLoading(true)
+    setMessage('')
+
+    try {
+      await saveDraft({
+        title: form.title,
+        content: form.content,
+        categoryId: Number(form.categoryId),
+      })
+      setForm((current) => ({ title: '', content: '', categoryId: current.categoryId }))
+      setMessage('草稿保存成功。')
+      onPublished()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setDraftLoading(false)
+    }
+  }
+
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="form-heading">
-        <h2>发布文章</h2>
-        <p>发布接口需要登录。作者 ID 不由前端传，后端从 JWT 中读取。</p>
+        <h2>提交审核</h2>
+        <p>提交后进入待审核状态，管理员通过后才会出现在公开列表。</p>
       </div>
+
+      <label>
+        板块
+        <select name="categoryId" onChange={updateField} value={form.categoryId}>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <label>
         标题
@@ -64,9 +133,19 @@ function PublishArticle({ currentUser, onPublished }) {
         />
       </label>
 
-      <button className="primary-button" disabled={loading} type="submit">
-        {loading ? '发布中...' : '发布文章'}
-      </button>
+      <div className="form-action-row">
+        <button className="primary-button" disabled={loading || draftLoading} type="submit">
+          {loading ? '提交中...' : '提交审核'}
+        </button>
+        <button
+          className="ghost-button"
+          disabled={loading || draftLoading}
+          type="button"
+          onClick={handleSaveDraft}
+        >
+          {draftLoading ? '保存中...' : '保存草稿'}
+        </button>
+      </div>
 
       {message && <p className="form-message">{message}</p>}
     </form>

@@ -29,13 +29,13 @@
 - 接口安全：注册接口返回 `UserResponse`，不直接返回 `User` 实体和密码字段。
 - JWT 认证：写操作通过拦截器校验 `Authorization: Bearer <token>`。
 - 管理员权限：`/api/admin/**` 接口会校验 JWT、账号状态和 `ADMIN` 角色。
-- 文章管理：发布、编辑、删除、详情、列表、分页查询。
+- 文章管理：草稿、提交审核、审核发布、驳回、下架、编辑、删除、详情、列表、分页查询。
 - 数据一致性：浏览、点赞、评论前校验文章存在；删除文章时清理评论和 Redis 数据。
 - 评论功能：发布评论、按文章查询评论。
 - Redis 浏览量：使用 String 记录文章浏览量。
 - Redis 点赞去重：使用 Set 防止同一用户重复点赞。
 - Redis 热门排行：使用 ZSet 按热度分数维护热门文章。
-- RabbitMQ 异步通知：文章发布后发送结构化消息 `ArticlePublishMessage`。
+- RabbitMQ 异步通知：管理员审核通过文章后发送结构化消息 `ArticlePublishMessage`。
 - RabbitMQ 可靠性：生产者 Confirm/Returns、消费者手动 ACK、Redis 幂等、DLX/DLQ 失败兜底。
 - Docker Compose：一键启动 MySQL、Redis、RabbitMQ 和后端服务。
 
@@ -142,7 +142,7 @@ npm run dev
 http://localhost:5173
 ```
 
-前端演示页覆盖登录注册、文章列表/详情/发布、点赞、评论、热门文章和管理员页面。
+前端演示页覆盖登录注册、文章列表/详情/投稿审核、我的文章、点赞、评论、热门文章和管理员页面。
 
 详细启动顺序、演示账号和浏览器验证流程见：
 
@@ -221,7 +221,7 @@ Content-Type: application/json
 
 登录成功后从 `data.token` 中复制 JWT。
 
-### 3. 发布文章
+### 3. 提交文章审核
 
 ```http
 POST /api/article/publish
@@ -232,11 +232,12 @@ Authorization: Bearer <token>
 ```json
 {
   "title": "第一篇文章",
-  "content": "这是文章内容"
+  "content": "这是文章内容",
+  "categoryId": 1
 }
 ```
 
-发布成功后会保存文章，并发送 RabbitMQ 异步通知消息。
+提交成功后文章进入 `PENDING` 待审核状态。管理员审核通过后，文章变为 `PUBLISHED` 并发送 RabbitMQ 异步通知消息。
 
 ### 4. 查看分页文章
 
@@ -307,16 +308,25 @@ Authorization: Bearer <token>
 
 | 方法   | 地址                                         | 是否登录 | 说明                   |
 | ------ | -------------------------------------------- | -------- | ---------------------- |
-| POST   | `/api/article/publish`                       | 是       | 发布文章               |
+| POST   | `/api/article/publish`                       | 是       | 兼容旧路径，提交文章审核 |
+| POST   | `/api/article/draft`                         | 是       | 保存草稿               |
+| PUT    | `/api/article/draft`                         | 是       | 更新草稿或被驳回文章   |
+| POST   | `/api/article/submit?articleId=1`            | 是       | 提交草稿或被驳回文章审核 |
 | PUT    | `/api/article/update`                        | 是       | 修改文章，仅作者可操作 |
 | DELETE | `/api/article/delete?articleId=1`            | 是       | 删除文章，仅作者可操作 |
-| GET    | `/api/article/listAll`                       | 否       | 查询全部文章           |
-| GET    | `/api/article/page?pageNum=1&pageSize=10`    | 否       | 分页查询文章           |
-| GET    | `/api/article/detail?articleId=1`            | 否       | 查询文章详情           |
-| GET    | `/api/article/view?articleId=1`              | 否       | 浏览文章               |
+| GET    | `/api/article/listAll`                       | 否       | 查询已发布文章         |
+| GET    | `/api/article/page?pageNum=1&pageSize=10`    | 否       | 分页查询已发布文章     |
+| GET    | `/api/article/detail?articleId=1`            | 否       | 查询已发布文章详情     |
+| GET    | `/api/article/view?articleId=1`              | 否       | 浏览已发布文章         |
 | POST   | `/api/article/like?articleId=1`              | 是       | 点赞                   |
 | POST   | `/api/article/unlike?articleId=1`            | 是       | 取消点赞               |
-| GET    | `/api/article/hot`                           | 否       | 热门排行               |
+| GET    | `/api/article/hot`                           | 否       | 已发布文章热门排行     |
+
+### 作者文章接口
+
+| 方法 | 地址 | 是否登录 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/user/articles?pageNum=1&pageSize=10&status=PENDING` | 是 | 作者查看自己的全部状态文章，可选状态筛选 |
 
 文章更新请求体：
 
@@ -347,6 +357,10 @@ Authorization: Bearer <admin-token>
 | ------ | ------------------------------------------------ | -------- | ---- |
 | GET    | `/api/admin/health`                              | 管理员   | 验证管理员权限链路 |
 | GET    | `/api/admin/article/page?pageNum=1&pageSize=10`  | 管理员   | 分页查询文章 |
+| GET    | `/api/admin/article/audit/page?status=PENDING&pageNum=1&pageSize=10` | 管理员 | 分页查询待审核文章 |
+| PUT    | `/api/admin/article/audit/approve?articleId=1`   | 管理员   | 审核通过文章，变为已发布 |
+| PUT    | `/api/admin/article/audit/reject`                | 管理员   | 驳回文章，并记录驳回原因 |
+| PUT    | `/api/admin/article/offline`                     | 管理员   | 下架已发布文章 |
 | DELETE | `/api/admin/article/delete?articleId=1`          | 管理员   | 删除任意文章，并清理评论和 Redis 数据 |
 | GET    | `/api/admin/comment/page?pageNum=1&pageSize=10`  | 管理员   | 分页查询评论 |
 | DELETE | `/api/admin/comment/delete?commentId=1`          | 管理员   | 删除任意评论 |
@@ -356,10 +370,10 @@ Authorization: Bearer <admin-token>
 
 ## RabbitMQ 链路说明
 
-文章发布后的异步链路：
+文章审核通过后的异步链路：
 
 ```text
-ArticleService.publish
+ArticleService.approve
   -> RabbitTemplate.convertAndSend(article.exchange, article.publish, ArticlePublishMessage)
   -> article.publish.queue
   -> NotificationListener.handlePublish
@@ -381,7 +395,7 @@ ArticleService.publish
 1. 运行 `docker compose up --build`，说明 MySQL、Redis、RabbitMQ、后端服务由 Compose 编排。
 2. 注册用户，强调注册响应不返回密码哈希。
 3. 登录拿到 JWT，说明写接口通过拦截器校验登录态。
-4. 发布文章，观察数据库有文章，RabbitMQ 消费者有日志。
+4. 提交文章审核，管理员审核通过后观察数据库状态变化和 RabbitMQ 消费者日志。
 5. 浏览文章和点赞文章，说明 Redis String、Set、ZSet 分别承担浏览量、点赞去重、热门排行。
 6. 发布评论，说明评论前校验文章存在。
 7. 运行 `mvn test`，说明核心业务已经有自动化测试覆盖。
@@ -413,4 +427,4 @@ mvn test
 
 面试中可以这样概括：
 
-> 我做了一个 Spring Boot 论坛项目，从 JDBC 版升级到 Spring Boot 版，实现了用户登录、文章发布、评论、Redis 点赞和浏览量、Redis ZSet 热门排行、RabbitMQ 异步通知以及 Docker Compose 部署。后续我重点补强了安全、数据一致性、接口规范、自动化测试和消息可靠性，比如注册接口不返回密码哈希、JWT 密钥外置、浏览点赞评论前校验文章存在、RabbitMQ 使用 Confirm/Returns、手动 ACK、幂等消费和 DLQ 处理失败消息。
+> 我做了一个 Spring Boot 论坛项目，从 JDBC 版升级到 Spring Boot 版，实现了用户登录、文章草稿与审核发布、评论、Redis 点赞和浏览量、Redis ZSet 热门排行、RabbitMQ 异步通知以及 Docker Compose 部署。后续我重点补强了安全、数据一致性、接口规范、自动化测试和消息可靠性，比如注册接口不返回密码哈希、JWT 密钥外置、公开查询只展示已发布文章、RabbitMQ 使用 Confirm/Returns、手动 ACK、幂等消费和 DLQ 处理失败消息。

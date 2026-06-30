@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { getArticleDetail, likeArticle, unlikeArticle, viewArticle } from '../api/articleApi.js'
+import {
+  favoriteArticle,
+  getArticleDetail,
+  likeArticle,
+  unfavoriteArticle,
+  unlikeArticle,
+  viewArticle,
+} from '../api/articleApi.js'
 import { listComments, publishComment } from '../api/commentApi.js'
+import { reportArticle, reportComment } from '../api/reportApi.js'
 
 function ArticleDetail({ articleId, currentUser, onBack }) {
   const [article, setArticle] = useState(null)
@@ -81,6 +89,86 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
     }
   }
 
+  async function handleFavorite() {
+    setActionLoading(true)
+    setMessage('')
+
+    try {
+      const result = await favoriteArticle(articleId)
+      await refreshDetail()
+      setMessage(result.message || '收藏状态已刷新。')
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleUnfavorite() {
+    setActionLoading(true)
+    setMessage('')
+
+    try {
+      const result = await unfavoriteArticle(articleId)
+      await refreshDetail()
+      setMessage(result.message || '收藏状态已刷新。')
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleReportArticle() {
+    if (!currentUser) {
+      setMessage('请先登录，再举报文章。')
+      return
+    }
+
+    const reason = window.prompt('请输入举报原因')
+    if (!reason) {
+      setMessage('举报原因不能为空。')
+      return
+    }
+
+    setActionLoading(true)
+    setMessage('')
+
+    try {
+      await reportArticle({ articleId, reason })
+      setMessage('举报文章提交成功，等待管理员处理。')
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleReportComment(commentId) {
+    if (!currentUser) {
+      setMessage('请先登录，再举报评论。')
+      return
+    }
+
+    const reason = window.prompt('请输入举报原因')
+    if (!reason) {
+      setMessage('举报原因不能为空。')
+      return
+    }
+
+    setActionLoading(true)
+    setMessage('')
+
+    try {
+      await reportComment({ commentId, reason })
+      setMessage(`评论 #${commentId} 举报已提交，等待管理员处理。`)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleCommentSubmit(event) {
     event.preventDefault()
 
@@ -133,6 +221,8 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
             <span>浏览</span>
             <strong>{article.likeCount}</strong>
             <span>点赞</span>
+            <strong>{article.favoriteCount ?? 0}</strong>
+            <span>收藏</span>
             <strong>{article.userId}</strong>
             <span>作者 ID</span>
           </div>
@@ -154,7 +244,31 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
             >
               取消点赞
             </button>
-            {!currentUser && <span>登录后可以点赞和评论。</span>}
+            <button
+              className="primary-button"
+              disabled={actionLoading || !currentUser}
+              type="button"
+              onClick={handleFavorite}
+            >
+              收藏
+            </button>
+            <button
+              className="ghost-button"
+              disabled={actionLoading || !currentUser}
+              type="button"
+              onClick={handleUnfavorite}
+            >
+              取消收藏
+            </button>
+            <button
+              className="ghost-button"
+              disabled={actionLoading || !currentUser}
+              type="button"
+              onClick={handleReportArticle}
+            >
+              举报文章
+            </button>
+            {!currentUser && <span>登录后可以点赞、收藏、评论和举报。</span>}
           </div>
         </article>
       )}
@@ -190,6 +304,14 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
                 <span>{comment.createTime}</span>
               </div>
               <p>{comment.content}</p>
+              <button
+                className="ghost-button compact-button"
+                disabled={actionLoading || !currentUser}
+                type="button"
+                onClick={() => handleReportComment(comment.id)}
+              >
+                举报评论
+              </button>
             </article>
           ))}
         </div>

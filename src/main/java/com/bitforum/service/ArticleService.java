@@ -1,6 +1,5 @@
 package com.bitforum.service;
 
-import com.bitforum.config.RabbitMQConfig;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,70 +9,222 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.config.RabbitMQConfig;
 import com.bitforum.entity.Article;
+import com.bitforum.entity.ArticleAuditRecord;
+import com.bitforum.entity.ArticleFavorite;
+import com.bitforum.entity.Category;
+import com.bitforum.mapper.ArticleAuditRecordMapper;
+import com.bitforum.mapper.ArticleFavoriteMapper;
 import com.bitforum.mapper.ArticleMapper;
+import com.bitforum.mapper.CategoryMapper;
 import com.bitforum.message.ArticlePublishMessage;
 
 @Service
 public class ArticleService {
+    public static final String STATUS_DRAFT = "DRAFT";
+    public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_PUBLISHED = "PUBLISHED";
+    public static final String STATUS_REJECTED = "REJECTED";
+    public static final String STATUS_OFFLINE = "OFFLINE";
 
     @Autowired
     private ArticleMapper articleMapper;
-
+    @Autowired
+    private ArticleAuditRecordMapper articleAuditRecordMapper;
+    @Autowired
+    private ArticleFavoriteMapper articleFavoriteMapper;
     @Autowired
     private RabbitTemplate rabbitTemplate;
     @Autowired
     private CommentService commentService;
     @Autowired
     private RedisService redisService;
+    @Autowired
+    private CategoryService categoryService;
+    @Autowired
+    private CategoryMapper categoryMapper;
+    @Autowired
+    private NotificationService notificationService;
 
     private static final Logger log = LoggerFactory.getLogger(ArticleService.class);
 
-    public void publish(String title, String content, Long userId) {
-        //主流程：保存文章（同步，必须保证完成）
-        Article article = new Article();
+    public void publish(String title, String content, Long categoryId, Long userId) {
+        createArticle(title, content, categoryId, userId, STATUS_PENDING);
+        log.info("文章已提交审核");
+    }
+
+    public Article saveDraft(String title, String content, Long categoryId, Long userId) {
+        return createArticle(title, content, categoryId, userId, STATUS_DRAFT);
+    }
+
+    public void updateDraft(Long userId, Long articleId, String title, String content, Long categoryId) {
+        Article article = findOwnedArticle(userId, articleId);
+        if (!STATUS_DRAFT.equals(article.getStatus()) && !STATUS_REJECTED.equals(article.getStatus())) {
+            throw new RuntimeException("只能修改草稿或被驳回文章");
+        }
+        Category category = categoryService.findEnabledById(categoryId);
+        if (category == null) {
+            throw new RuntimeException("板块不存在或已禁用");
+        }
+
         article.setTitle(title);
         article.setContent(content);
-        article.setUserId(userId);
-        articleMapper.insert(article);
-
-        // 插入数据库后，MyBatis-Plus 会把自增主键回填到 article.id，消息里就可以带上真实文章 ID。
-        ArticlePublishMessage articlePublishMessage = new ArticlePublishMessage();
-        articlePublishMessage.setArticleId(article.getId());
-        articlePublishMessage.setUserId(userId);
-        articlePublishMessage.setTitle(title);
-        articlePublishMessage.setPublishTime(System.currentTimeMillis());
-        // UUID 用来生成全局唯一的消息编号，为后续消费者幂等判断做准备。
-        articlePublishMessage.setMessageId(UUID.randomUUID().toString());
-        // 发送到指定交换机，再由 routingKey 路由到文章发布队列，消费者仍然只监听最终队列。
-        rabbitTemplate.convertAndSend(
-            RabbitMQConfig.ARTICLE_EXCHANGE,
-            RabbitMQConfig.ARTICLE_PUBLISH_ROUTING_KEY,
-            articlePublishMessage);
-        log.info("文章发送完成，MQ消息已发送");
-
+        article.setCategoryId(categoryId);
+        article.setStatus(STATUS_DRAFT);
+        articleMapper.updateById(article);
     }
-    
+
+    public void submit(Long userId, Long articleId) {
+        Article article = findOwnedArticle(userId, articleId);
+        if (!STATUS_DRAFT.equals(article.getStatus()) && !STATUS_REJECTED.equals(article.getStatus())) {
+            throw new RuntimeException("只能提交草稿或被驳回文章");
+        }
+        Category category = categoryService.findEnabledById(article.getCategoryId());
+        if (category == null) {
+            throw new RuntimeException("板块不存在或已禁用");
+        }
+        article.setStatus(STATUS_PENDING);
+        articleMapper.updateById(article);
+    }
+
     public List<Article> listAll() {
-        List<Article> articleList = articleMapper.selectList(null);
-        log.info("已有的文章如下：{}", articleList);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        wrapper.eq("status", STATUS_PUBLISHED);
+        wrapper.orderByDesc("create_time");
+        List<Article> articleList = articleMapper.selectList(wrapper);
+        fillArticleMetadata(articleList);
         return articleList;
     }
 
     public Page<Article> pageArticles(long pageNum, long pageSize) {
-        // Page 对象里放分页参数：当前页 pageNum、每页条数 pageSize
-        Page<Article> page = new Page<>(pageNum,pageSize);
-        // selectPage 会查询当前页数据，并把总条数、总页数等分页信息写回 Page 对象
-        return articleMapper.selectPage(page, null);
+        return pageArticles(pageNum, pageSize, null);
+    }
+
+    public Page<Article> pageArticles(long pageNum, long pageSize, Long categoryId) {
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        wrapper.eq("status", STATUS_PUBLISHED);
+        if (categoryId != null) {
+            wrapper.eq("category_id", categoryId);
+        }
+        wrapper.orderByDesc("create_time");
+        Page<Article> result = articleMapper.selectPage(page, wrapper);
+        fillArticleMetadata(result.getRecords());
+        return result;
+    }
+
+    public Page<Article> searchPublishedArticles(String keyword, Long categoryId, long pageNum, long pageSize) {
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        wrapper.eq("status", STATUS_PUBLISHED);
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(query -> query.like("title", keyword).or().like("content", keyword));
+        }
+        if (categoryId != null) {
+            wrapper.eq("category_id", categoryId);
+        }
+        wrapper.orderByDesc("create_time");
+        Page<Article> result = articleMapper.selectPage(page, wrapper);
+        fillArticleMetadata(result.getRecords());
+        return result;
+    }
+
+    public Page<Article> pageUserArticles(Long userId, long pageNum, long pageSize, String status) {
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        wrapper.eq("user_id", userId);
+        if (StringUtils.hasText(status)) {
+            validateStatus(status);
+            wrapper.eq("status", status);
+        }
+        wrapper.orderByDesc("create_time");
+        Page<Article> result = articleMapper.selectPage(page, wrapper);
+        fillArticleMetadata(result.getRecords());
+        return result;
+    }
+
+    public Page<Article> pageAdminArticles(long pageNum, long pageSize, Long categoryId) {
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        if (categoryId != null) {
+            wrapper.eq("category_id", categoryId);
+        }
+        wrapper.orderByDesc("create_time");
+        Page<Article> result = articleMapper.selectPage(page, wrapper);
+        fillArticleMetadata(result.getRecords());
+        return result;
+    }
+
+    public Page<Article> pageAuditArticles(long pageNum, long pageSize, String status) {
+        String auditStatus = StringUtils.hasText(status) ? status : STATUS_PENDING;
+        validateStatus(auditStatus);
+
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        wrapper.eq("status", auditStatus);
+        wrapper.orderByDesc("create_time");
+        Page<Article> result = articleMapper.selectPage(page, wrapper);
+        fillArticleMetadata(result.getRecords());
+        return result;
     }
 
     public Article findById(Long id) {
-        log.info("ID为{}的文章如下：", id);
-        return articleMapper.selectById(id);
+        Article article = articleMapper.selectById(id);
+        fillArticleMetadata(article);
+        return article;
     }
-    
+
+    public Article findPublishedById(Long id) {
+        Article article = articleMapper.selectById(id);
+        if (article == null || !STATUS_PUBLISHED.equals(article.getStatus())) {
+            return null;
+        }
+        fillArticleMetadata(article);
+        return article;
+    }
+
+    @Transactional
+    public void favoriteArticle(Long userId, Long articleId) {
+        Article article = articleMapper.selectById(articleId);
+        if (article == null || !STATUS_PUBLISHED.equals(article.getStatus())) {
+            throw new RuntimeException("只能收藏已发布文章");
+        }
+        Long count = articleFavoriteMapper.selectCount(new QueryWrapper<ArticleFavorite>()
+                .eq("user_id", userId)
+                .eq("article_id", articleId));
+        if (count > 0) {
+            throw new RuntimeException("不能重复收藏同一篇文章");
+        }
+
+        ArticleFavorite favorite = new ArticleFavorite();
+        favorite.setUserId(userId);
+        favorite.setArticleId(articleId);
+        articleFavoriteMapper.insert(favorite);
+        notificationService.notifyFavorite(article, userId);
+    }
+
+    @Transactional
+    public void unfavoriteArticle(Long userId, Long articleId) {
+        int deleted = articleFavoriteMapper.delete(new QueryWrapper<ArticleFavorite>()
+                .eq("user_id", userId)
+                .eq("article_id", articleId));
+        if (deleted == 0) {
+            throw new RuntimeException("收藏记录不存在或不属于当前用户");
+        }
+    }
+
+    public Page<Article> pageFavoriteArticles(Long userId, long pageNum, long pageSize) {
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        Page<Article> result = articleMapper.selectFavoriteArticles(page, userId, STATUS_PUBLISHED);
+        fillArticleMetadata(result.getRecords());
+        return result;
+    }
+
     public void update(Long userId, Long articleId, String title, String content) {
         Article article = articleMapper.selectById(articleId);
         if (article == null) {
@@ -82,13 +233,16 @@ public class ArticleService {
         if (!article.getUserId().equals(userId)) {
             throw new RuntimeException("只能修改自己的文章");
         }
+        if (!STATUS_DRAFT.equals(article.getStatus()) && !STATUS_REJECTED.equals(article.getStatus())) {
+            throw new RuntimeException("只能修改草稿或被驳回文章");
+        }
         article.setTitle(title);
         article.setContent(content);
         articleMapper.updateById(article);
     }
-    
+
     @Transactional
-    public void delete(Long userId,Long articleId) {
+    public void delete(Long userId, Long articleId) {
         Article article = articleMapper.selectById(articleId);
         if (article == null) {
             throw new RuntimeException("文章不存在");
@@ -105,16 +259,162 @@ public class ArticleService {
         if (article == null) {
             return false;
         }
-        // 管理员可以删除任意文章，但删除后的数据一致性规则必须和作者删除保持一致。
         deleteArticleWithRelatedData(articleId);
         return true;
     }
 
+    @Transactional
+    public void approve(Long articleId, Long auditorId) {
+        Article article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new RuntimeException("文章不存在");
+        }
+        if (!STATUS_PENDING.equals(article.getStatus())) {
+            throw new RuntimeException("只能审核待审核文章");
+        }
+        article.setStatus(STATUS_PUBLISHED);
+        articleMapper.updateById(article);
+        recordAudit(articleId, auditorId, STATUS_PUBLISHED, null);
+        sendPublishMessage(article);
+        notificationService.notifyAuditApproved(article, auditorId);
+        log.info("文章审核通过，MQ 消息已发送");
+    }
+
+    @Transactional
+    public void reject(Long articleId, Long auditorId, String reason) {
+        if (!StringUtils.hasText(reason)) {
+            throw new RuntimeException("驳回原因不能为空");
+        }
+        Article article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new RuntimeException("文章不存在");
+        }
+        if (!STATUS_PENDING.equals(article.getStatus())) {
+            throw new RuntimeException("只能审核待审核文章");
+        }
+        article.setStatus(STATUS_REJECTED);
+        articleMapper.updateById(article);
+        recordAudit(articleId, auditorId, STATUS_REJECTED, reason);
+        notificationService.notifyAuditRejected(article, auditorId, reason);
+    }
+
+    @Transactional
+    public void offline(Long articleId, Long auditorId, String reason) {
+        Article article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new RuntimeException("文章不存在");
+        }
+        if (!STATUS_PUBLISHED.equals(article.getStatus())) {
+            throw new RuntimeException("只能下架已发布文章");
+        }
+        article.setStatus(STATUS_OFFLINE);
+        articleMapper.updateById(article);
+        recordAudit(articleId, auditorId, STATUS_OFFLINE, reason);
+        redisService.deleteArticleData(articleId);
+        notificationService.notifyArticleOffline(article, auditorId, reason);
+    }
+
+    private Article createArticle(String title, String content, Long categoryId, Long userId, String status) {
+        Category category = categoryService.findEnabledById(categoryId);
+        if (category == null) {
+            throw new RuntimeException("板块不存在或已禁用");
+        }
+
+        Article article = new Article();
+        article.setTitle(title);
+        article.setContent(content);
+        article.setCategoryId(categoryId);
+        article.setUserId(userId);
+        article.setStatus(status);
+        articleMapper.insert(article);
+        fillArticleMetadata(article);
+        return article;
+    }
+
+    private Article findOwnedArticle(Long userId, Long articleId) {
+        Article article = articleMapper.selectById(articleId);
+        if (article == null) {
+            throw new RuntimeException("文章不存在");
+        }
+        if (!article.getUserId().equals(userId)) {
+            throw new RuntimeException("只能操作自己的文章");
+        }
+        return article;
+    }
+
     private void deleteArticleWithRelatedData(Long articleId) {
-        // 删除文章是一个完整业务流程：先清评论，再删文章，最后清 Redis 缓存数据
         commentService.deleteByArticleId(articleId);
+        articleFavoriteMapper.delete(new QueryWrapper<ArticleFavorite>().eq("article_id", articleId));
         articleMapper.deleteById(articleId);
         redisService.deleteArticleData(articleId);
     }
 
+    private void sendPublishMessage(Article article) {
+        ArticlePublishMessage articlePublishMessage = new ArticlePublishMessage();
+        articlePublishMessage.setArticleId(article.getId());
+        articlePublishMessage.setUserId(article.getUserId());
+        articlePublishMessage.setTitle(article.getTitle());
+        articlePublishMessage.setPublishTime(System.currentTimeMillis());
+        articlePublishMessage.setMessageId(UUID.randomUUID().toString());
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.ARTICLE_EXCHANGE,
+                RabbitMQConfig.ARTICLE_PUBLISH_ROUTING_KEY,
+                articlePublishMessage);
+    }
+
+    private void recordAudit(Long articleId, Long auditorId, String auditStatus, String reason) {
+        ArticleAuditRecord record = new ArticleAuditRecord();
+        record.setArticleId(articleId);
+        record.setAuditorId(auditorId);
+        record.setAuditStatus(auditStatus);
+        record.setReason(reason);
+        articleAuditRecordMapper.insert(record);
+    }
+
+    private void validateStatus(String status) {
+        if (!STATUS_DRAFT.equals(status)
+                && !STATUS_PENDING.equals(status)
+                && !STATUS_PUBLISHED.equals(status)
+                && !STATUS_REJECTED.equals(status)
+                && !STATUS_OFFLINE.equals(status)) {
+            throw new RuntimeException("文章状态不正确");
+        }
+    }
+
+    private void fillArticleMetadata(List<Article> articles) {
+        if (articles == null || articles.isEmpty()) {
+            return;
+        }
+        for (Article article : articles) {
+            fillArticleMetadata(article);
+        }
+    }
+
+    private void fillArticleMetadata(Article article) {
+        if (article == null) {
+            return;
+        }
+        fillCategoryName(article);
+        fillFavoriteCount(article);
+    }
+
+    private void fillCategoryName(Article article) {
+        if (article == null || article.getCategoryId() == null) {
+            return;
+        }
+        Category category = categoryMapper.selectById(article.getCategoryId());
+        if (category != null) {
+            article.setCategoryName(category.getName());
+        }
+    }
+
+    private void fillFavoriteCount(Article article) {
+        if (article == null || article.getId() == null) {
+            return;
+        }
+        Long count = articleFavoriteMapper.selectCount(
+                new QueryWrapper<ArticleFavorite>().eq("article_id", article.getId()));
+        article.setFavoriteCount(count);
+    }
 }

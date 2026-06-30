@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import ArticleList from './pages/ArticleList.jsx'
 import ArticleDetail from './pages/ArticleDetail.jsx'
 import PublishArticle from './pages/PublishArticle.jsx'
+import MyArticles from './pages/MyArticles.jsx'
+import NotificationCenter from './pages/NotificationCenter.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import { clearAuth, getCurrentUser } from './api/request.js'
+import { getUnreadNotificationCount } from './api/notificationApi.js'
 
 const learningSteps = [
   '搭建 React + Vite 项目结构',
@@ -15,6 +18,8 @@ const learningSteps = [
   '完成文章列表、详情和发布',
   '完成点赞、评论和热门文章',
   '完成管理员页面',
+  '完成文章审核状态流转',
+  '完成收藏与基础搜索',
 ]
 
 function App() {
@@ -27,6 +32,27 @@ function App() {
 
   // 发布文章后递增这个值，ArticleList 的 useEffect 会重新拉取列表。
   const [listRefreshKey, setListRefreshKey] = useState(0)
+  const [myArticleRefreshKey, setMyArticleRefreshKey] = useState(0)
+  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  async function refreshUnreadCount() {
+    if (!currentUser) {
+      setUnreadCount(0)
+      return
+    }
+
+    try {
+      const result = await getUnreadNotificationCount()
+      setUnreadCount(result.data || 0)
+    } catch {
+      setUnreadCount(0)
+    }
+  }
+
+  useEffect(() => {
+    refreshUnreadCount()
+  }, [currentUser, notificationRefreshKey])
 
   function openDetail(articleId) {
     setSelectedArticleId(articleId)
@@ -42,12 +68,14 @@ function App() {
     clearAuth()
     setCurrentUser(null)
     setSelectedArticleId(null)
+    setUnreadCount(0)
     setActivePage('login')
   }
 
   function handlePublished() {
     setListRefreshKey((current) => current + 1)
-    setActivePage('articles')
+    setMyArticleRefreshKey((current) => current + 1)
+    setActivePage('myArticles')
   }
 
   return (
@@ -94,11 +122,25 @@ function App() {
             文章
           </button>
           <button
+            className={activePage === 'myArticles' ? 'active' : ''}
+            type="button"
+            onClick={() => setActivePage('myArticles')}
+          >
+            我的
+          </button>
+          <button
+            className={activePage === 'notifications' ? 'active' : ''}
+            type="button"
+            onClick={() => setActivePage('notifications')}
+          >
+            通知{unreadCount > 0 ? ` ${unreadCount}` : ''}
+          </button>
+          <button
             className={activePage === 'publish' ? 'active' : ''}
             type="button"
             onClick={() => setActivePage('publish')}
           >
-            发布
+            投稿
           </button>
           <button
             className={activePage === 'admin' ? 'active' : ''}
@@ -154,18 +196,31 @@ function App() {
           <PublishArticle currentUser={currentUser} onPublished={handlePublished} />
         )}
 
+        {activePage === 'myArticles' && (
+          <MyArticles currentUser={currentUser} refreshKey={myArticleRefreshKey} />
+        )}
+
+        {activePage === 'notifications' && (
+          <NotificationCenter
+            currentUser={currentUser}
+            refreshKey={notificationRefreshKey}
+            onOpenArticle={openDetail}
+            onUnreadChanged={() => setNotificationRefreshKey((current) => current + 1)}
+          />
+        )}
+
         {activePage === 'admin' && <AdminPanel currentUser={currentUser} />}
       </section>
 
       <section className="learning-panel" aria-label="前端学习路线">
         <div className="panel-header">
           <h2>学习路线</h2>
-          <span>Step 7 / 7</span>
+          <span>Step 9 / 9</span>
         </div>
 
         <ol className="step-list">
           {learningSteps.map((step, index) => (
-            <li className={index === 6 ? 'active' : ''} key={step}>
+            <li className={index === 8 ? 'active' : ''} key={step}>
               <span>{index + 1}</span>
               <p>{step}</p>
             </li>

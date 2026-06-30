@@ -20,6 +20,8 @@ public class CommentService {
     private CommentMapper commentMapper;
     @Autowired
     private ArticleMapper articleMapper;
+    @Autowired
+    private NotificationService notificationService;
 
     private static final Logger log = LoggerFactory.getLogger(CommentService.class);
 
@@ -28,7 +30,7 @@ public class CommentService {
         // 评论是文章的从属数据，插入评论前必须先确认文章存在
         // 这里直接用 ArticleMapper 查询，避免 CommentService 和 ArticleService 互相注入形成循环依赖
         Article article = articleMapper.selectById(articleId);
-        if (article == null) {
+        if (article == null || !ArticleService.STATUS_PUBLISHED.equals(article.getStatus())) {
             // 这里先返回 false，让 Controller 决定给前端什么业务提示
             return false;
         }
@@ -39,6 +41,7 @@ public class CommentService {
         comment.setParentCommentId(0L); //0表示“一级评论”
         log.info("发表评论成功,发表评论的用户ID是{}",userId);
         commentMapper.insert(comment);
+        notificationService.notifyComment(article, userId, content);
         // 插入成功后返回 true，表示 Controller 可以返回“评论发布成功”
         return true;
     }

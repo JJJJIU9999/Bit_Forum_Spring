@@ -3,6 +3,7 @@ package com.bitforum.entity;
 import java.time.LocalDateTime;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -15,16 +16,25 @@ import lombok.Data;
 public class Article {
     @TableId(type = IdType.AUTO)
     private Long id;
-    
+
     @NotBlank(message = "标题不能为空")
     @Size(max = 50, message = "标题不能超过50个字符")
     private String title;
+
     @NotBlank(message = "内容不能为空")
     private String content;
 
     private Long userId;
+    private Long categoryId;
+    private String status;
     private int viewCount;
     private int likeCount;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    @TableField(exist = false)
+    private String categoryName;
+
+    @TableField(exist = false)
+    private Long favoriteCount;
 }

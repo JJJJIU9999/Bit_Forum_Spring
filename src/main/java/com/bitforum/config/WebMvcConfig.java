@@ -25,10 +25,19 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(loginInterceptor)
                 .addPathPatterns(
                         "/api/article/publish",
+                        "/api/article/draft",
+                        "/api/article/submit",
+                        "/api/article/favorite",
                         "/api/article/like",
                         "/api/article/unlike",
                         "/api/article/update",
                         "/api/article/delete",
+                        "/api/user/articles",
+                        "/api/user/favorites",
+                        "/api/user/notifications",
+                        "/api/user/notifications/**",
+                        "/api/user/reports",
+                        "/api/user/reports/**",
                         "/api/comment/publish"
                 );   
     }

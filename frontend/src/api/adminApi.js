@@ -5,9 +5,31 @@ export function checkAdminHealth() {
   return request.get('/admin/health')
 }
 
+export function getAdminDashboardSummary() {
+  return request.get('/admin/dashboard/summary')
+}
+
 // 后台文章分页：管理员可以查看所有文章。
 export function pageAdminArticles(params = { pageNum: 1, pageSize: 10 }) {
   return request.get('/admin/article/page', { params })
+}
+
+export function pageAuditArticles(params = { status: 'PENDING', pageNum: 1, pageSize: 10 }) {
+  return request.get('/admin/article/audit/page', { params })
+}
+
+export function approveArticle(articleId) {
+  return request.put('/admin/article/audit/approve', null, {
+    params: { articleId },
+  })
+}
+
+export function rejectArticle(payload) {
+  return request.put('/admin/article/audit/reject', payload)
+}
+
+export function offlineArticle(payload) {
+  return request.put('/admin/article/offline', payload)
 }
 
 // 管理员删除文章不校验作者归属，权限由后端 AdminInterceptor 控制。
@@ -46,4 +68,46 @@ export function enableUser(userId) {
   return request.put('/admin/user/enable', null, {
     params: { userId },
   })
+}
+
+export function pageAdminCategories(params = { pageNum: 1, pageSize: 10 }) {
+  return request.get('/admin/category/page', { params })
+}
+
+export function createCategory(payload) {
+  return request.post('/admin/category/create', payload)
+}
+
+export function updateCategory(payload) {
+  return request.put('/admin/category/update', payload)
+}
+
+export function enableCategory(categoryId) {
+  return request.put('/admin/category/enable', null, {
+    params: { categoryId },
+  })
+}
+
+export function disableCategory(categoryId) {
+  return request.put('/admin/category/disable', null, {
+    params: { categoryId },
+  })
+}
+
+export function deleteCategory(categoryId) {
+  return request.delete('/admin/category/delete', {
+    params: { categoryId },
+  })
+}
+
+export function pageAdminReports(params = { status: 'PENDING', pageNum: 1, pageSize: 10 }) {
+  return request.get('/admin/reports', { params })
+}
+
+export function resolveReport(payload) {
+  return request.put('/admin/reports/resolve', payload)
+}
+
+export function rejectReport(payload) {
+  return request.put('/admin/reports/reject', payload)
 }
