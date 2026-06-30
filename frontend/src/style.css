@@ -885,9 +885,12 @@ button {
 }
 
 .multi-action-cell {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.multi-action-cell > * + * {
+  margin-left: var(--space-sm);
 }
 
 .empty-cell {
