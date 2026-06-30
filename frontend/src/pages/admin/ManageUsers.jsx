@@ -54,6 +54,14 @@ function ManageUsers({ currentUser }) {
 
       <div className="admin-table-wrap">
         <table className="admin-table">
+          <colgroup>
+            <col className="col-id" />
+            <col className="col-title" />
+            <col className="col-role" />
+            <col className="col-small" />
+            <col className="col-date" />
+            <col className="col-action" />
+          </colgroup>
           <thead>
             <tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th></tr>
           </thead>

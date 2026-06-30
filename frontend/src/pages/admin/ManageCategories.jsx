@@ -84,6 +84,14 @@ function ManageCategories({ currentUser }) {
 
       <div className="admin-table-wrap">
         <table className="admin-table">
+          <colgroup>
+            <col className="col-id" />
+            <col className="col-title" />
+            <col className="col-content" />
+            <col className="col-small" />
+            <col className="col-small" />
+            <col className="col-wide-action" />
+          </colgroup>
           <thead>
             <tr><th>ID</th><th>名称</th><th>描述</th><th>排序</th><th>状态</th><th>操作</th></tr>
           </thead>

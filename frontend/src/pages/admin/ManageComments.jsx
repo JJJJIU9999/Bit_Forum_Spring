@@ -53,6 +53,13 @@ function ManageComments({ currentUser }) {
 
       <div className="admin-table-wrap">
         <table className="admin-table">
+          <colgroup>
+            <col className="col-id" />
+            <col className="col-small" />
+            <col className="col-small" />
+            <col className="col-content" />
+            <col className="col-action" />
+          </colgroup>
           <thead>
             <tr><th>ID</th><th>文章ID</th><th>用户ID</th><th>内容</th><th>操作</th></tr>
           </thead>
