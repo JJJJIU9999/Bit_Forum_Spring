@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { registerUser } from '../api/userApi.js'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 function Register({ onRegistered }) {
   const [form, setForm] = useState({ username: '', password: '' })
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
 
   function updateField(event) {
@@ -18,12 +20,13 @@ function Register({ onRegistered }) {
 
     try {
       await registerUser(form)
-      setMessage('注册成功，请使用新账号登录。')
+      setMessage('注册成功，请登录。')
+      setMessageType('info')
       setForm({ username: '', password: '' })
-      // 注册成功后回到登录页，让用户明确走一次登录拿 token 的流程。
       onRegistered()
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
@@ -33,7 +36,7 @@ function Register({ onRegistered }) {
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="form-heading">
         <h2>用户注册</h2>
-        <p>注册接口只返回安全的用户信息，不会把密码哈希返回给前端。</p>
+        <p>注册后即可加入社区，参与文章发布与互动。</p>
       </div>
 
       <label>
@@ -62,7 +65,7 @@ function Register({ onRegistered }) {
         {loading ? '注册中...' : '注册'}
       </button>
 
-      {message && <p className="form-message">{message}</p>}
+      <MessageBanner message={message} type={messageType} />
     </form>
   )
 }

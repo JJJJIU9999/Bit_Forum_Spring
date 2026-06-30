@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { pageMyArticles, pageMyFavorites, submitArticle } from '../api/articleApi.js'
 import { pageMyReports } from '../api/reportApi.js'
+import PageHeader from '../components/PageHeader.jsx'
+import ArticleCard from '../components/ArticleCard.jsx'
+import StatusBadge from '../components/StatusBadge.jsx'
+import Pagination from '../components/Pagination.jsx'
+import EmptyState from '../components/EmptyState.jsx'
+import LoadingSpinner from '../components/LoadingSpinner.jsx'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 const statusOptions = [
   { value: '', label: '全部状态' },
@@ -10,14 +17,6 @@ const statusOptions = [
   { value: 'REJECTED', label: '已驳回' },
   { value: 'OFFLINE', label: '已下架' },
 ]
-
-const statusLabels = {
-  DRAFT: '草稿',
-  PENDING: '待审核',
-  PUBLISHED: '已发布',
-  REJECTED: '已驳回',
-  OFFLINE: '已下架',
-}
 
 const reportStatusLabels = {
   PENDING: '待处理',
@@ -37,6 +36,7 @@ function MyArticles({ currentUser, refreshKey }) {
   const [pageInfo, setPageInfo] = useState({ current: 1, pages: 1, total: 0 })
   const [pageNum, setPageNum] = useState(1)
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
   const [localRefreshKey, setLocalRefreshKey] = useState(0)
 
@@ -45,6 +45,7 @@ function MyArticles({ currentUser, refreshKey }) {
       if (!currentUser) {
         setArticles([])
         setMessage('请先登录。')
+        setMessageType('error')
         return
       }
 
@@ -73,6 +74,7 @@ function MyArticles({ currentUser, refreshKey }) {
       } catch (error) {
         setArticles([])
         setMessage(error.message)
+        setMessageType('error')
       } finally {
         setLoading(false)
       }
@@ -99,31 +101,37 @@ function MyArticles({ currentUser, refreshKey }) {
     try {
       await submitArticle(articleId)
       setMessage(`文章 #${articleId} 已提交审核。`)
-      setLocalRefreshKey((current) => current + 1)
+      setMessageType('info')
+      setLocalRefreshKey((k) => k + 1)
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
   }
 
+  const tabTitles = {
+    articles: '我的文章',
+    favorites: '我的收藏',
+    reports: '我的举报',
+  }
+
+  const tabDescriptions = {
+    articles: '草稿、待审核、已发布、已驳回和已下架的文章都会显示在这里。',
+    favorites: '这里展示你收藏且仍处于已发布状态的文章。',
+    reports: '你提交过的文章和评论举报，以及管理员处理状态。',
+  }
+
   return (
     <div className="content-view">
-      <div className="section-heading">
-        <div>
-          <h2>{activeTab === 'favorites' ? '我的收藏' : '我的文章'}</h2>
-          <p>
-            {activeTab === 'reports'
-              ? '这里记录你提交过的文章和评论举报，以及管理员处理状态。'
-              : activeTab === 'favorites'
-                ? '这里只展示当前用户收藏且仍处于已发布状态的文章。'
-                : '草稿、待审核、已发布、已驳回和已下架都会显示在这里。'}
-          </p>
-        </div>
-        <span>{pageInfo.total} 条</span>
-      </div>
+      <PageHeader
+        title={tabTitles[activeTab]}
+        description={tabDescriptions[activeTab]}
+        badge={`${pageInfo.total} 条`}
+      />
 
-      <div className="tabs compact-tabs">
+      <div className="tabs">
         <button
           className={activeTab === 'articles' ? 'active' : ''}
           type="button"
@@ -160,83 +168,60 @@ function MyArticles({ currentUser, refreshKey }) {
         </label>
       )}
 
-      {loading && <p className="form-message">加载数据中...</p>}
-      {message && <p className="form-message">{message}</p>}
+      {loading && <LoadingSpinner text="加载数据中..." />}
+      <MessageBanner message={message} type={messageType} />
 
       <div className="article-list">
-        {activeTab === 'reports' && articles.map((report) => (
-          <article className="article-item report-item" key={report.id}>
-            <div>
-              <span>
-                #{report.id} · {targetTypeLabels[report.targetType] || report.targetType} #{report.targetId}
-              </span>
-              <h3>{report.reason}</h3>
-              <p>
-                被举报用户 #{report.targetOwnerId}
-                {report.handleResult ? ` · 处理说明：${report.handleResult}` : ''}
-              </p>
-            </div>
-            <div className="article-actions">
-              <span className={`status-badge status-${report.status?.toLowerCase()}`}>
-                {reportStatusLabels[report.status] || report.status}
-              </span>
-            </div>
-          </article>
-        ))}
+        {activeTab === 'reports' &&
+          articles.map((report) => (
+            <article className="article-item report-item" key={report.id}>
+              <div>
+                <span>
+                  #{report.id} · {targetTypeLabels[report.targetType] || report.targetType} #
+                  {report.targetId}
+                </span>
+                <h3>{report.reason}</h3>
+                <p>
+                  被举报用户 #{report.targetOwnerId}
+                  {report.handleResult ? ` · 处理说明：${report.handleResult}` : ''}
+                </p>
+              </div>
+              <div className="article-actions">
+                <StatusBadge
+                  status={report.status}
+                  label={reportStatusLabels[report.status]}
+                />
+              </div>
+            </article>
+          ))}
 
-        {activeTab !== 'reports' && articles.map((article) => (
-          <article className="article-item" key={article.id}>
-            <div>
-              <span>
-                #{article.id} {article.categoryName ? `· ${article.categoryName}` : ''}
-              </span>
-              <h3>{article.title}</h3>
-              <p>{article.content}</p>
-            </div>
-            <div className="article-actions">
-              <span className={`status-badge status-${article.status?.toLowerCase()}`}>
-                {statusLabels[article.status] || article.status}
-              </span>
-              {activeTab === 'favorites' && (
-                <span className="status-badge status-published">已收藏</span>
-              )}
-              {activeTab === 'articles' && (article.status === 'DRAFT' || article.status === 'REJECTED') && (
-                <button
-                  className="ghost-button"
-                  disabled={loading}
-                  type="button"
-                  onClick={() => handleSubmit(article.id)}
-                >
-                  提交审核
-                </button>
-              )}
-            </div>
-          </article>
-        ))}
-        {articles.length === 0 && <p className="form-message">暂无数据。</p>}
+        {activeTab !== 'reports' &&
+          articles.map((article) => (
+            <ArticleCard
+              key={article.id}
+              article={article}
+              statusLabel={activeTab === 'favorites' ? '已收藏' : undefined}
+            >
+              {activeTab === 'articles' &&
+                (article.status === 'DRAFT' || article.status === 'REJECTED') && (
+                  <button
+                    className="ghost-button"
+                    disabled={loading}
+                    type="button"
+                    onClick={() => handleSubmit(article.id)}
+                  >
+                    提交审核
+                  </button>
+                )}
+            </ArticleCard>
+          ))}
+
+        {!loading && articles.length === 0 && <EmptyState />}
       </div>
 
-      <div className="pager">
-        <button
-          className="ghost-button"
-          disabled={pageInfo.current <= 1 || loading}
-          type="button"
-          onClick={() => setPageNum((current) => current - 1)}
-        >
-          上一页
-        </button>
-        <span>
-          第 {pageInfo.current} / {pageInfo.pages || 1} 页
-        </span>
-        <button
-          className="ghost-button"
-          disabled={pageInfo.current >= pageInfo.pages || loading}
-          type="button"
-          onClick={() => setPageNum((current) => current + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      {pageInfo.total > 0 && (
+        <Pagination pageInfo={pageInfo} onPageChange={setPageNum} loading={loading} />
+      )}
     </div>
   )
 }

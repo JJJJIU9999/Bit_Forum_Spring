@@ -9,17 +9,19 @@ import {
 } from '../api/articleApi.js'
 import { listComments, publishComment } from '../api/commentApi.js'
 import { reportArticle, reportComment } from '../api/reportApi.js'
+import PageHeader from '../components/PageHeader.jsx'
+import LoadingSpinner from '../components/LoadingSpinner.jsx'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 function ArticleDetail({ articleId, currentUser, onBack }) {
   const [article, setArticle] = useState(null)
   const [comments, setComments] = useState([])
   const [commentContent, setCommentContent] = useState('')
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
-  // React 开发环境 StrictMode 可能重复执行 effect。
-  // 这个 ref 用来保证同一篇文章详情页只调用一次浏览接口。
   const viewedArticleRef = useRef(null)
 
   async function refreshDetail() {
@@ -34,9 +36,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
 
   useEffect(() => {
     async function loadDetail() {
-      if (!articleId) {
-        return
-      }
+      if (!articleId) return
 
       setLoading(true)
       setMessage('')
@@ -47,10 +47,10 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
           await viewArticle(articleId)
         }
 
-        // 详情和评论分开请求：文章来自 article 接口，评论来自 comment 接口。
         await Promise.all([refreshDetail(), refreshComments()])
       } catch (error) {
         setMessage(error.message)
+        setMessageType('error')
       } finally {
         setLoading(false)
       }
@@ -59,61 +59,18 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
     loadDetail()
   }, [articleId])
 
-  async function handleLike() {
+  async function handleAction(action, successMsg) {
     setActionLoading(true)
     setMessage('')
 
     try {
-      const result = await likeArticle(articleId)
+      const result = await action()
       await refreshDetail()
-      setMessage(result.message || '点赞状态已刷新。')
+      setMessage(result.message || successMsg)
+      setMessageType('info')
     } catch (error) {
       setMessage(error.message)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  async function handleUnlike() {
-    setActionLoading(true)
-    setMessage('')
-
-    try {
-      const result = await unlikeArticle(articleId)
-      await refreshDetail()
-      setMessage(result.message || '点赞状态已刷新。')
-    } catch (error) {
-      setMessage(error.message)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  async function handleFavorite() {
-    setActionLoading(true)
-    setMessage('')
-
-    try {
-      const result = await favoriteArticle(articleId)
-      await refreshDetail()
-      setMessage(result.message || '收藏状态已刷新。')
-    } catch (error) {
-      setMessage(error.message)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  async function handleUnfavorite() {
-    setActionLoading(true)
-    setMessage('')
-
-    try {
-      const result = await unfavoriteArticle(articleId)
-      await refreshDetail()
-      setMessage(result.message || '收藏状态已刷新。')
-    } catch (error) {
-      setMessage(error.message)
+      setMessageType('error')
     } finally {
       setActionLoading(false)
     }
@@ -122,23 +79,23 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
   async function handleReportArticle() {
     if (!currentUser) {
       setMessage('请先登录，再举报文章。')
+      setMessageType('error')
       return
     }
 
     const reason = window.prompt('请输入举报原因')
-    if (!reason) {
-      setMessage('举报原因不能为空。')
-      return
-    }
+    if (!reason) return
 
     setActionLoading(true)
     setMessage('')
 
     try {
       await reportArticle({ articleId, reason })
-      setMessage('举报文章提交成功，等待管理员处理。')
+      setMessage('举报已提交，等待管理员处理。')
+      setMessageType('info')
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setActionLoading(false)
     }
@@ -147,23 +104,23 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
   async function handleReportComment(commentId) {
     if (!currentUser) {
       setMessage('请先登录，再举报评论。')
+      setMessageType('error')
       return
     }
 
     const reason = window.prompt('请输入举报原因')
-    if (!reason) {
-      setMessage('举报原因不能为空。')
-      return
-    }
+    if (!reason) return
 
     setActionLoading(true)
     setMessage('')
 
     try {
       await reportComment({ commentId, reason })
-      setMessage(`评论 #${commentId} 举报已提交，等待管理员处理。`)
+      setMessage(`评论 #${commentId} 举报已提交。`)
+      setMessageType('info')
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setActionLoading(false)
     }
@@ -174,6 +131,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
 
     if (!currentUser) {
       setMessage('请先登录，再发表评论。')
+      setMessageType('error')
       return
     }
 
@@ -181,16 +139,14 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
     setMessage('')
 
     try {
-      // 评论发布只传 articleId/content；评论作者由后端从 JWT 中读取。
-      await publishComment({
-        articleId,
-        content: commentContent,
-      })
+      await publishComment({ articleId, content: commentContent })
       setCommentContent('')
       await refreshComments()
       setMessage('评论发布成功。')
+      setMessageType('info')
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setActionLoading(false)
     }
@@ -198,24 +154,25 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
 
   return (
     <div className="content-view">
-      <div className="section-heading">
-        <div>
-          <h2>文章详情</h2>
-          <p>进入详情时先调用浏览接口，再读取文章、点赞数和评论列表。</p>
-        </div>
-        <button className="ghost-button" type="button" onClick={onBack}>
-          返回列表
-        </button>
-      </div>
+      <PageHeader
+        title="文章详情"
+        description="阅读全文，参与点赞、收藏和评论互动。"
+        badge={
+          <button className="ghost-button" type="button" onClick={onBack}>
+            返回列表
+          </button>
+        }
+      />
 
-      {loading && <p className="form-message">加载详情中...</p>}
-      {message && <p className="form-message">{message}</p>}
+      {loading && <LoadingSpinner text="加载详情中..." />}
+      <MessageBanner message={message} type={messageType} />
 
       {article && (
         <article className="detail-card">
           <span>文章 #{article.id}</span>
           <h3>{article.title}</h3>
           <p>{article.content}</p>
+
           <div className="metric-row">
             <strong>{article.viewCount}</strong>
             <span>浏览</span>
@@ -232,7 +189,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
               className="primary-button"
               disabled={actionLoading || !currentUser}
               type="button"
-              onClick={handleLike}
+              onClick={() => handleAction(() => likeArticle(articleId), '点赞成功。')}
             >
               点赞
             </button>
@@ -240,7 +197,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
               className="ghost-button"
               disabled={actionLoading || !currentUser}
               type="button"
-              onClick={handleUnlike}
+              onClick={() => handleAction(() => unlikeArticle(articleId), '已取消点赞。')}
             >
               取消点赞
             </button>
@@ -248,7 +205,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
               className="primary-button"
               disabled={actionLoading || !currentUser}
               type="button"
-              onClick={handleFavorite}
+              onClick={() => handleAction(() => favoriteArticle(articleId), '收藏成功。')}
             >
               收藏
             </button>
@@ -256,7 +213,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
               className="ghost-button"
               disabled={actionLoading || !currentUser}
               type="button"
-              onClick={handleUnfavorite}
+              onClick={() => handleAction(() => unfavoriteArticle(articleId), '已取消收藏。')}
             >
               取消收藏
             </button>
@@ -296,7 +253,6 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
         </form>
 
         <div className="comment-list">
-          {comments.length === 0 && <p>暂无评论。</p>}
           {comments.map((comment) => (
             <article className="comment-item" key={comment.id}>
               <div>
@@ -314,6 +270,7 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
               </button>
             </article>
           ))}
+          {comments.length === 0 && <p>暂无评论，来说两句吧。</p>}
         </div>
       </section>
     </div>

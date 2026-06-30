@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { loginUser } from '../api/userApi.js'
 import { getCurrentUser, saveAuth } from '../api/request.js'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 function Login({ onLogin }) {
-  // form 用来保存两个输入框的值；输入框改变时同步更新。
   const [form, setForm] = useState({ username: '', password: '' })
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
 
   function updateField(event) {
@@ -14,7 +15,6 @@ function Login({ onLogin }) {
   }
 
   async function handleSubmit(event) {
-    // 阻止浏览器表单默认刷新页面，改为由 React 接管提交逻辑。
     event.preventDefault()
     setMessage('')
     setLoading(true)
@@ -23,9 +23,11 @@ function Login({ onLogin }) {
       const result = await loginUser(form)
       saveAuth(result.data)
       onLogin(getCurrentUser())
-      setMessage('登录成功，token 已保存。')
+      setMessage('登录成功，欢迎回来。')
+      setMessageType('info')
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
@@ -35,7 +37,7 @@ function Login({ onLogin }) {
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="form-heading">
         <h2>用户登录</h2>
-        <p>登录成功后，后续发布文章、点赞和评论请求会自动带上 JWT。</p>
+        <p>登录后即可发布文章、点赞、收藏和评论。</p>
       </div>
 
       <label>
@@ -43,7 +45,7 @@ function Login({ onLogin }) {
         <input
           name="username"
           onChange={updateField}
-          placeholder="例如 writer_liu"
+          placeholder="请输入用户名"
           type="text"
           value={form.username}
         />
@@ -54,7 +56,7 @@ function Login({ onLogin }) {
         <input
           name="password"
           onChange={updateField}
-          placeholder="至少 6 位"
+          placeholder="请输入密码"
           type="password"
           value={form.password}
         />
@@ -64,7 +66,7 @@ function Login({ onLogin }) {
         {loading ? '登录中...' : '登录'}
       </button>
 
-      {message && <p className="form-message">{message}</p>}
+      <MessageBanner message={message} type={messageType} />
     </form>
   )
 }

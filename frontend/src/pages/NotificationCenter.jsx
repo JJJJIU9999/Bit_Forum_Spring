@@ -4,6 +4,12 @@ import {
   markNotificationRead,
   pageNotifications,
 } from '../api/notificationApi.js'
+import PageHeader from '../components/PageHeader.jsx'
+import StatusBadge from '../components/StatusBadge.jsx'
+import Pagination from '../components/Pagination.jsx'
+import EmptyState from '../components/EmptyState.jsx'
+import LoadingSpinner from '../components/LoadingSpinner.jsx'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 const typeLabels = {
   COMMENT: '评论',
@@ -19,6 +25,7 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
   const [pageInfo, setPageInfo] = useState({ current: 1, pages: 1, total: 0 })
   const [pageNum, setPageNum] = useState(1)
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
   const [localRefreshKey, setLocalRefreshKey] = useState(0)
 
@@ -26,6 +33,7 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
     if (!currentUser) {
       setNotifications([])
       setMessage('请先登录。')
+      setMessageType('error')
       return
     }
 
@@ -43,6 +51,7 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
     } catch (error) {
       setNotifications([])
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
@@ -59,10 +68,12 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
     try {
       await markNotificationRead(notificationId)
       setMessage('通知已标记为已读。')
-      setLocalRefreshKey((current) => current + 1)
+      setMessageType('info')
+      setLocalRefreshKey((k) => k + 1)
       onUnreadChanged?.()
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
@@ -75,10 +86,12 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
     try {
       await markAllNotificationsRead()
       setMessage('全部通知已标记为已读。')
-      setLocalRefreshKey((current) => current + 1)
+      setMessageType('info')
+      setLocalRefreshKey((k) => k + 1)
       onUnreadChanged?.()
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
@@ -86,23 +99,23 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
 
   return (
     <div className="content-view">
-      <div className="section-heading">
-        <div>
-          <h2>通知中心</h2>
-          <p>评论、点赞、收藏和文章审核结果会汇总在这里。</p>
-        </div>
-        <button
-          className="ghost-button"
-          disabled={!currentUser || loading || notifications.length === 0}
-          type="button"
-          onClick={handleReadAll}
-        >
-          全部已读
-        </button>
-      </div>
+      <PageHeader
+        title="通知中心"
+        description="评论、点赞、收藏和文章审核结果会汇总在这里。"
+        badge={
+          <button
+            className="ghost-button compact-button"
+            disabled={!currentUser || loading || notifications.length === 0}
+            type="button"
+            onClick={handleReadAll}
+          >
+            全部已读
+          </button>
+        }
+      />
 
-      {loading && <p className="form-message">加载通知中...</p>}
-      {message && <p className="form-message">{message}</p>}
+      {loading && <LoadingSpinner text="加载通知中..." />}
+      <MessageBanner message={message} type={messageType} />
 
       <div className="notification-list">
         {notifications.map((notification) => (
@@ -111,9 +124,10 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
             key={notification.id}
           >
             <div className="notification-main">
-              <span className="status-badge">
-                {typeLabels[notification.type] || notification.type}
-              </span>
+              <StatusBadge
+                status={notification.type}
+                label={typeLabels[notification.type] || notification.type}
+              />
               <div>
                 <h3>{notification.title}</h3>
                 <p>{notification.content}</p>
@@ -145,33 +159,15 @@ function NotificationCenter({ currentUser, refreshKey, onOpenArticle, onUnreadCh
             </div>
           </article>
         ))}
-        {notifications.length === 0 && <p className="form-message">暂无通知。</p>}
+
+        {!loading && notifications.length === 0 && <EmptyState message="暂无通知。" />}
       </div>
 
-      <div className="pager">
-        <button
-          className="ghost-button"
-          disabled={pageInfo.current <= 1 || loading}
-          type="button"
-          onClick={() => setPageNum((current) => current - 1)}
-        >
-          上一页
-        </button>
-        <span>
-          第 {pageInfo.current} / {pageInfo.pages || 1} 页，共 {pageInfo.total} 条
-        </span>
-        <button
-          className="ghost-button"
-          disabled={pageInfo.current >= pageInfo.pages || loading}
-          type="button"
-          onClick={() => setPageNum((current) => current + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      {pageInfo.total > 0 && (
+        <Pagination pageInfo={pageInfo} onPageChange={setPageNum} loading={loading} />
+      )}
     </div>
   )
 }
 
 export default NotificationCenter
-

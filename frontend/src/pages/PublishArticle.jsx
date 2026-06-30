@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { publishArticle, saveDraft } from '../api/articleApi.js'
 import { listCategories } from '../api/categoryApi.js'
+import PageHeader from '../components/PageHeader.jsx'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 function PublishArticle({ currentUser, onPublished }) {
   const [form, setForm] = useState({ title: '', content: '', categoryId: '' })
   const [categories, setCategories] = useState([])
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)
 
@@ -20,6 +23,7 @@ function PublishArticle({ currentUser, onPublished }) {
         }
       } catch (error) {
         setMessage(error.message)
+        setMessageType('error')
       }
     }
 
@@ -36,11 +40,13 @@ function PublishArticle({ currentUser, onPublished }) {
 
     if (!currentUser) {
       setMessage('请先登录，再提交审核。')
+      setMessageType('error')
       return
     }
 
     if (!form.categoryId) {
       setMessage('请选择文章板块。')
+      setMessageType('error')
       return
     }
 
@@ -54,10 +60,12 @@ function PublishArticle({ currentUser, onPublished }) {
         categoryId: Number(form.categoryId),
       })
       setForm((current) => ({ title: '', content: '', categoryId: current.categoryId }))
-      setMessage('提交审核成功，可在我的文章查看状态。')
+      setMessage('提交审核成功，可在"我的文章"查看状态。')
+      setMessageType('info')
       onPublished()
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
@@ -66,11 +74,13 @@ function PublishArticle({ currentUser, onPublished }) {
   async function handleSaveDraft() {
     if (!currentUser) {
       setMessage('请先登录，再保存草稿。')
+      setMessageType('error')
       return
     }
 
     if (!form.categoryId) {
       setMessage('请选择文章板块。')
+      setMessageType('error')
       return
     }
 
@@ -85,9 +95,11 @@ function PublishArticle({ currentUser, onPublished }) {
       })
       setForm((current) => ({ title: '', content: '', categoryId: current.categoryId }))
       setMessage('草稿保存成功。')
+      setMessageType('info')
       onPublished()
     } catch (error) {
       setMessage(error.message)
+      setMessageType('error')
     } finally {
       setDraftLoading(false)
     }
@@ -95,10 +107,10 @@ function PublishArticle({ currentUser, onPublished }) {
 
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
-      <div className="form-heading">
-        <h2>提交审核</h2>
-        <p>提交后进入待审核状态，管理员通过后才会出现在公开列表。</p>
-      </div>
+      <PageHeader
+        title="发布文章"
+        description="选择板块、填写标题和内容，提交后等待管理员审核。"
+      />
 
       <label>
         板块
@@ -147,7 +159,7 @@ function PublishArticle({ currentUser, onPublished }) {
         </button>
       </div>
 
-      {message && <p className="form-message">{message}</p>}
+      <MessageBanner message={message} type={messageType} />
     </form>
   )
 }

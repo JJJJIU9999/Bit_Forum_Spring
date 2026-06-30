@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { getHotArticles, pageArticles, searchArticles } from '../api/articleApi.js'
 import { listCategories } from '../api/categoryApi.js'
+import PageHeader from '../components/PageHeader.jsx'
+import ArticleCard from '../components/ArticleCard.jsx'
+import Pagination from '../components/Pagination.jsx'
+import EmptyState from '../components/EmptyState.jsx'
+import LoadingSpinner from '../components/LoadingSpinner.jsx'
+import MessageBanner from '../components/MessageBanner.jsx'
 
 function ArticleList({ onOpenDetail, refreshKey }) {
   const [articles, setArticles] = useState([])
@@ -13,6 +19,7 @@ function ArticleList({ onOpenDetail, refreshKey }) {
   const [pageNum, setPageNum] = useState(1)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hotCollapsed, setHotCollapsed] = useState(false)
 
   useEffect(() => {
     async function loadCategories() {
@@ -33,7 +40,7 @@ function ArticleList({ onOpenDetail, refreshKey }) {
       setMessage('')
 
       try {
-        const params = { pageNum, pageSize: 5 }
+        const params = { pageNum, pageSize: 6 }
         if (selectedCategoryId) {
           params.categoryId = selectedCategoryId
         }
@@ -82,13 +89,11 @@ function ArticleList({ onOpenDetail, refreshKey }) {
 
   return (
     <div className="content-view">
-      <div className="section-heading">
-        <div>
-          <h2>文章列表</h2>
-          <p>公开列表只展示已发布文章，详情页会继续读取 Redis 浏览量和点赞数。</p>
-        </div>
-        <span>{pageInfo.total} 篇</span>
-      </div>
+      <PageHeader
+        title="文章列表"
+        description="浏览社区最新文章，按板块筛选或搜索感兴趣的内容。"
+        badge={`${pageInfo.total} 篇`}
+      />
 
       <form className="search-filter" onSubmit={handleSearch}>
         <label>
@@ -118,73 +123,48 @@ function ArticleList({ onOpenDetail, refreshKey }) {
         </button>
       </form>
 
-      {loading && <p className="form-message">加载文章中...</p>}
-      {message && <p className="form-message">{message}</p>}
+      {loading && <LoadingSpinner text="加载文章中..." />}
+      <MessageBanner message={message} type="error" />
 
-      <section className="hot-section" aria-label="热门文章">
-        <div className="sub-heading">
-          <h3>热门文章</h3>
-          <span>Redis ZSet</span>
-        </div>
-
-        <div className="hot-list">
-          {hotArticles.length === 0 && <p>暂无热门文章数据。</p>}
-          {hotArticles.map((item) => (
+      {hotArticles.length > 0 && (
+        <section className="hot-section">
+          <div className="sub-heading">
+            <h3>热门文章</h3>
             <button
-              className="hot-item"
-              key={item.article.id}
+              className="ghost-button compact-button"
               type="button"
-              onClick={() => onOpenDetail(item.article.id)}
+              onClick={() => setHotCollapsed((v) => !v)}
             >
-              <span>热度 {item.hotScore}</span>
-              <strong>{item.article.title}</strong>
+              {hotCollapsed ? '展开' : '收起'}
             </button>
-          ))}
-        </div>
-      </section>
+          </div>
+          {!hotCollapsed && <div className="hot-list">
+            {hotArticles.map((item) => (
+              <button
+                className="hot-item"
+                key={item.article.id}
+                type="button"
+                onClick={() => onOpenDetail(item.article.id)}
+              >
+                <span>热度 {item.hotScore}</span>
+                <strong>{item.article.title}</strong>
+              </button>
+            ))}
+          </div>
+          }
+        </section>
+      )}
 
       <div className="article-list">
         {articles.map((article) => (
-          <article className="article-item" key={article.id}>
-            <div>
-              <span>
-                #{article.id} {article.categoryName ? `· ${article.categoryName}` : ''}
-              </span>
-              <h3>{article.title}</h3>
-              <p>{article.content}</p>
-            </div>
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => onOpenDetail(article.id)}
-            >
-              查看详情
-            </button>
-          </article>
+          <ArticleCard key={article.id} article={article} onOpen={onOpenDetail} />
         ))}
+        {!loading && articles.length === 0 && <EmptyState message="暂无文章。" />}
       </div>
 
-      <div className="pager">
-        <button
-          className="ghost-button"
-          disabled={pageInfo.current <= 1}
-          type="button"
-          onClick={() => setPageNum((current) => current - 1)}
-        >
-          上一页
-        </button>
-        <span>
-          第 {pageInfo.current} / {pageInfo.pages || 1} 页
-        </span>
-        <button
-          className="ghost-button"
-          disabled={pageInfo.current >= pageInfo.pages}
-          type="button"
-          onClick={() => setPageNum((current) => current + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      {pageInfo.total > 0 && (
+        <Pagination pageInfo={pageInfo} onPageChange={setPageNum} loading={loading} />
+      )}
     </div>
   )
 }
