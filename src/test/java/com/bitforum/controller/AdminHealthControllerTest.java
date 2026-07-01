@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -12,13 +14,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.bitforum.dto.AdminHealthResponse;
+import com.bitforum.dto.HealthComponentStatus;
 import com.bitforum.entity.User;
+import com.bitforum.service.AdminHealthService;
 import com.bitforum.service.UserService;
 import com.bitforum.util.JwtUtil;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class AdminControllerTest {
+class AdminHealthControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
@@ -27,6 +32,9 @@ class AdminControllerTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private AdminHealthService adminHealthService;
 
     @Test
     void adminApiShouldRejectRequestWithoutToken() throws Exception {
@@ -82,11 +90,51 @@ class AdminControllerTest {
 
         when(jwtUtil.getUserId("admin-token")).thenReturn(3L);
         when(userService.findById(3L)).thenReturn(admin);
+        when(adminHealthService.check()).thenReturn(healthyResponse());
 
         mockMvc.perform(get("/api/admin/health")
                 .header("Authorization", "Bearer admin-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.message").value("管理员接口访问成功"));
+                .andExpect(jsonPath("$.message").value("管理员健康检查查询成功"))
+                .andExpect(jsonPath("$.data.overallStatus").value("UP"))
+                .andExpect(jsonPath("$.data.application.status").value("UP"))
+                .andExpect(jsonPath("$.data.mysql.status").value("UP"))
+                .andExpect(jsonPath("$.data.redis.status").value("UP"))
+                .andExpect(jsonPath("$.data.rabbitmq.status").value("UP"));
+    }
+
+    @Test
+    void adminApiShouldReturnControlledDownComponentStatus() throws Exception {
+        User admin = new User();
+        admin.setId(4L);
+        admin.setRole(UserService.ROLE_ADMIN);
+        admin.setStatus(1);
+
+        AdminHealthResponse response = healthyResponse();
+        response.setOverallStatus("DOWN");
+        response.setRedis(HealthComponentStatus.of("Redis", "DOWN", "Redis 连接检查失败"));
+
+        when(jwtUtil.getUserId("admin-token")).thenReturn(4L);
+        when(userService.findById(4L)).thenReturn(admin);
+        when(adminHealthService.check()).thenReturn(response);
+
+        mockMvc.perform(get("/api/admin/health")
+                .header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.overallStatus").value("DOWN"))
+                .andExpect(jsonPath("$.data.redis.status").value("DOWN"));
+    }
+
+    private AdminHealthResponse healthyResponse() {
+        AdminHealthResponse response = new AdminHealthResponse();
+        response.setOverallStatus("UP");
+        response.setApplication(HealthComponentStatus.of("应用服务", "UP", "应用正在运行"));
+        response.setMysql(HealthComponentStatus.of("MySQL", "UP", "数据库连接正常"));
+        response.setRedis(HealthComponentStatus.of("Redis", "UP", "Redis 连接正常"));
+        response.setRabbitmq(HealthComponentStatus.of("RabbitMQ", "UP", "RabbitMQ 连接正常"));
+        response.setCheckedAt(LocalDateTime.now());
+        return response;
     }
 }
