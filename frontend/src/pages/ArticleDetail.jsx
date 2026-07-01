@@ -13,7 +13,7 @@ import PageHeader from '../components/PageHeader.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import MessageBanner from '../components/MessageBanner.jsx'
 
-function ArticleDetail({ articleId, currentUser, onBack }) {
+function ArticleDetail({ articleId, currentUser, onBack, onOpenUserProfile }) {
   const [article, setArticle] = useState(null)
   const [comments, setComments] = useState([])
   const [commentContent, setCommentContent] = useState('')
@@ -171,6 +171,9 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
         <article className="detail-card">
           <span>文章 #{article.id}</span>
           <h3>{article.title}</h3>
+          {article.coverUrl && (
+            <img className="detail-cover" alt={`${article.title} 封面`} src={article.coverUrl} />
+          )}
           <p>{article.content}</p>
 
           <div className="metric-row">
@@ -185,6 +188,13 @@ function ArticleDetail({ articleId, currentUser, onBack }) {
           </div>
 
           <div className="action-row">
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => onOpenUserProfile(article.userId)}
+            >
+              查看作者主页
+            </button>
             <button
               className="primary-button"
               disabled={actionLoading || !currentUser}

@@ -7,6 +7,7 @@ import ArticleList from './pages/ArticleList.jsx'
 import ArticleDetail from './pages/ArticleDetail.jsx'
 import PublishArticle from './pages/PublishArticle.jsx'
 import MyArticles from './pages/MyArticles.jsx'
+import PublicUserProfile from './pages/PublicUserProfile.jsx'
 import NotificationCenter from './pages/NotificationCenter.jsx'
 import Dashboard from './pages/admin/Dashboard.jsx'
 import AuditArticles from './pages/admin/AuditArticles.jsx'
@@ -22,6 +23,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(getCurrentUser())
   const [activePage, setActivePage] = useState(currentUser ? 'articles' : 'login')
   const [selectedArticleId, setSelectedArticleId] = useState(null)
+  const [selectedUserId, setSelectedUserId] = useState(null)
   const [listRefreshKey, setListRefreshKey] = useState(0)
   const [myArticleRefreshKey, setMyArticleRefreshKey] = useState(0)
   const [notificationRefreshKey, setNotificationRefreshKey] = useState(0)
@@ -51,6 +53,11 @@ function App() {
     setActivePage('detail')
   }
 
+  function openUserProfile(userId) {
+    setSelectedUserId(userId)
+    setActivePage('publicProfile')
+  }
+
   function handleLogin(user) {
     setCurrentUser(user)
     setActivePage('articles')
@@ -60,6 +67,7 @@ function App() {
     clearAuth()
     setCurrentUser(null)
     setSelectedArticleId(null)
+    setSelectedUserId(null)
     setUnreadCount(0)
     setActivePage('login')
   }
@@ -105,6 +113,18 @@ function App() {
           articleId={selectedArticleId}
           currentUser={currentUser}
           onBack={() => setActivePage('articles')}
+          onOpenUserProfile={openUserProfile}
+        />
+      )
+    }
+
+    if (activePage === 'publicProfile') {
+      return (
+        <PublicUserProfile
+          userId={selectedUserId}
+          currentUser={currentUser}
+          onBack={() => setActivePage(selectedArticleId ? 'detail' : 'articles')}
+          onOpenDetail={openDetail}
         />
       )
     }

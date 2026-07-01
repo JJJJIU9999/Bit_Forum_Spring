@@ -54,15 +54,27 @@ public class ArticleService {
     private static final Logger log = LoggerFactory.getLogger(ArticleService.class);
 
     public void publish(String title, String content, Long categoryId, Long userId) {
-        createArticle(title, content, categoryId, userId, STATUS_PENDING);
+        publish(title, content, categoryId, userId, null);
+    }
+
+    public void publish(String title, String content, Long categoryId, Long userId, String coverUrl) {
+        createArticle(title, content, categoryId, userId, STATUS_PENDING, coverUrl);
         log.info("文章已提交审核");
     }
 
     public Article saveDraft(String title, String content, Long categoryId, Long userId) {
-        return createArticle(title, content, categoryId, userId, STATUS_DRAFT);
+        return saveDraft(title, content, categoryId, userId, null);
+    }
+
+    public Article saveDraft(String title, String content, Long categoryId, Long userId, String coverUrl) {
+        return createArticle(title, content, categoryId, userId, STATUS_DRAFT, coverUrl);
     }
 
     public void updateDraft(Long userId, Long articleId, String title, String content, Long categoryId) {
+        updateDraft(userId, articleId, title, content, categoryId, null);
+    }
+
+    public void updateDraft(Long userId, Long articleId, String title, String content, Long categoryId, String coverUrl) {
         Article article = findOwnedArticle(userId, articleId);
         if (!STATUS_DRAFT.equals(article.getStatus()) && !STATUS_REJECTED.equals(article.getStatus())) {
             throw new RuntimeException("只能修改草稿或被驳回文章");
@@ -74,6 +86,7 @@ public class ArticleService {
 
         article.setTitle(title);
         article.setContent(content);
+        article.setCoverUrl(normalizeOptionalText(coverUrl));
         article.setCategoryId(categoryId);
         article.setStatus(STATUS_DRAFT);
         articleMapper.updateById(article);
@@ -142,6 +155,17 @@ public class ArticleService {
             validateStatus(status);
             wrapper.eq("status", status);
         }
+        wrapper.orderByDesc("create_time");
+        Page<Article> result = articleMapper.selectPage(page, wrapper);
+        fillArticleMetadata(result.getRecords());
+        return result;
+    }
+
+    public Page<Article> pagePublishedArticlesByUser(Long userId, long pageNum, long pageSize) {
+        Page<Article> page = new Page<>(pageNum, pageSize);
+        QueryWrapper<Article> wrapper = new QueryWrapper<>();
+        wrapper.eq("user_id", userId);
+        wrapper.eq("status", STATUS_PUBLISHED);
         wrapper.orderByDesc("create_time");
         Page<Article> result = articleMapper.selectPage(page, wrapper);
         fillArticleMetadata(result.getRecords());
@@ -226,6 +250,10 @@ public class ArticleService {
     }
 
     public void update(Long userId, Long articleId, String title, String content) {
+        update(userId, articleId, title, content, null);
+    }
+
+    public void update(Long userId, Long articleId, String title, String content, String coverUrl) {
         Article article = articleMapper.selectById(articleId);
         if (article == null) {
             throw new RuntimeException("文章不存在");
@@ -238,6 +266,7 @@ public class ArticleService {
         }
         article.setTitle(title);
         article.setContent(content);
+        article.setCoverUrl(normalizeOptionalText(coverUrl));
         articleMapper.updateById(article);
     }
 
@@ -314,7 +343,7 @@ public class ArticleService {
         notificationService.notifyArticleOffline(article, auditorId, reason);
     }
 
-    private Article createArticle(String title, String content, Long categoryId, Long userId, String status) {
+    private Article createArticle(String title, String content, Long categoryId, Long userId, String status, String coverUrl) {
         Category category = categoryService.findEnabledById(categoryId);
         if (category == null) {
             throw new RuntimeException("板块不存在或已禁用");
@@ -323,12 +352,17 @@ public class ArticleService {
         Article article = new Article();
         article.setTitle(title);
         article.setContent(content);
+        article.setCoverUrl(normalizeOptionalText(coverUrl));
         article.setCategoryId(categoryId);
         article.setUserId(userId);
         article.setStatus(status);
         articleMapper.insert(article);
         fillArticleMetadata(article);
         return article;
+    }
+
+    private String normalizeOptionalText(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private Article findOwnedArticle(Long userId, Long articleId) {

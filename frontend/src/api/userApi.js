@@ -9,3 +9,35 @@ export function registerUser(payload) {
 export function loginUser(payload) {
   return request.post('/user/login', payload)
 }
+
+export function getCurrentUserProfile() {
+  return request.get('/user/profile')
+}
+
+export function updateCurrentUserProfile(payload) {
+  return request.put('/user/profile', payload)
+}
+
+export function getPublicUserProfile(userId) {
+  return request.get(`/users/${userId}/profile`)
+}
+
+export function pagePublicUserArticles(userId, params = { pageNum: 1, pageSize: 10 }) {
+  return request.get(`/users/${userId}/articles`, { params })
+}
+
+export function followUser(userId) {
+  return request.post(`/users/${userId}/follow`)
+}
+
+export function unfollowUser(userId) {
+  return request.delete(`/users/${userId}/follow`)
+}
+
+export function pageUserFollowers(userId, params = { pageNum: 1, pageSize: 10 }) {
+  return request.get(`/users/${userId}/followers`, { params })
+}
+
+export function pageUserFollowing(userId, params = { pageNum: 1, pageSize: 10 }) {
+  return request.get(`/users/${userId}/following`, { params })
+}

@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import com.bitforum.common.Result;
@@ -19,6 +20,11 @@ public class GlobalExceptionHandler {
     public Result<String> handleValid(MethodArgumentNotValidException e) {
         String msg = e.getBindingResult().getFieldError().getDefaultMessage();
         return Result.fail(msg);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Result<String> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        return Result.fail("上传文件过大，头像不能超过 2MB，文章封面不能超过 5MB");
     }
 
     // 兜底处理未知异常：日志保留细节，响应不暴露 e.getMessage()

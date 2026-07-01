@@ -3,6 +3,7 @@ package com.bitforum.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -21,7 +22,13 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bitforum.dto.AdminUserResponse;
+import com.bitforum.dto.PublicUserProfileResponse;
+import com.bitforum.dto.UserProfileResponse;
+import com.bitforum.dto.UserProfileUpdateRequest;
 import com.bitforum.entity.User;
+import com.bitforum.mapper.ArticleFavoriteMapper;
+import com.bitforum.mapper.ArticleMapper;
+import com.bitforum.mapper.UserFollowMapper;
 import com.bitforum.mapper.UserMapper;
 import com.bitforum.service.UserService.UserStatusUpdateResult;
 
@@ -34,6 +41,12 @@ class UserServiceTest {
 
     @Mock
     private UserMapper userMapper;    // 假的 Mapper，不连数据库
+    @Mock
+    private ArticleMapper articleMapper;
+    @Mock
+    private ArticleFavoriteMapper articleFavoriteMapper;
+    @Mock
+    private UserFollowMapper userFollowMapper;
 
     @InjectMocks
     private UserService userService;  // 真的 Service，但里面的 Mapper 是假的
@@ -146,5 +159,94 @@ class UserServiceTest {
         assertEquals(UserStatusUpdateResult.SUCCESS, result);
         assertEquals(UserService.STATUS_ENABLED, user.getStatus());
         verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void updateProfileShouldOnlyChangeEditableFields() {
+        User user = new User();
+        user.setId(10L);
+        user.setUsername("profile-user");
+        user.setPassword("password-hash");
+        user.setRole("USER");
+        user.setStatus(UserService.STATUS_ENABLED);
+
+        UserProfileUpdateRequest request = new UserProfileUpdateRequest();
+        request.setAvatar("https://example.com/avatar.png");
+        request.setNickname("新昵称");
+        request.setBio("新的个人简介");
+
+        when(userMapper.selectById(10L)).thenReturn(user, user);
+        when(articleMapper.selectCount(any(QueryWrapper.class))).thenReturn(2L);
+        when(articleFavoriteMapper.selectCount(any(QueryWrapper.class))).thenReturn(3L);
+
+        UserProfileResponse response = userService.updateProfile(10L, request);
+
+        assertEquals("https://example.com/avatar.png", user.getAvatar());
+        assertEquals("新昵称", user.getNickname());
+        assertEquals("新的个人简介", user.getBio());
+        assertEquals("password-hash", user.getPassword());
+        assertEquals("USER", user.getRole());
+        assertEquals(UserService.STATUS_ENABLED, user.getStatus());
+        assertEquals(2L, response.getPublishedArticleCount());
+        assertEquals(3L, response.getFavoriteCount());
+        verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void getPublicProfileShouldReturnSafeFieldsAndStats() {
+        User user = new User();
+        user.setId(11L);
+        user.setUsername("public-user");
+        user.setPassword("password-hash");
+        user.setAvatar("https://example.com/public.png");
+        user.setNickname("公开昵称");
+        user.setBio("公开简介");
+        user.setStatus(UserService.STATUS_DISABLED);
+
+        when(userMapper.selectById(11L)).thenReturn(user);
+        when(articleMapper.selectCount(any(QueryWrapper.class))).thenReturn(4L);
+        when(articleFavoriteMapper.selectCount(any(QueryWrapper.class))).thenReturn(5L);
+        when(userFollowMapper.selectCount(any(QueryWrapper.class))).thenReturn(6L, 7L);
+
+        PublicUserProfileResponse response = userService.getPublicProfile(11L);
+
+        assertEquals(11L, response.getUserId());
+        assertEquals("public-user", response.getUsername());
+        assertEquals("公开昵称", response.getNickname());
+        assertEquals(UserService.STATUS_DISABLED, response.getStatus());
+        assertEquals(4L, response.getPublishedArticleCount());
+        assertEquals(5L, response.getFavoriteCount());
+        assertEquals(6L, response.getFollowingCount());
+        assertEquals(7L, response.getFollowerCount());
+        assertEquals(false, response.getFollowedByCurrentUser());
+    }
+
+    @Test
+    void getPublicProfileShouldReturnFollowedByCurrentUser() {
+        User user = new User();
+        user.setId(13L);
+        user.setUsername("followed-user");
+
+        when(userMapper.selectById(13L)).thenReturn(user);
+        when(articleMapper.selectCount(any(QueryWrapper.class))).thenReturn(0L);
+        when(articleFavoriteMapper.selectCount(any(QueryWrapper.class))).thenReturn(0L);
+        when(userFollowMapper.selectCount(any(QueryWrapper.class))).thenReturn(2L, 3L, 1L);
+
+        PublicUserProfileResponse response = userService.getPublicProfile(13L, 12L);
+
+        assertEquals(2L, response.getFollowingCount());
+        assertEquals(3L, response.getFollowerCount());
+        assertEquals(true, response.getFollowedByCurrentUser());
+    }
+
+    @Test
+    void getCurrentProfileShouldFailWhenUserMissing() {
+        when(userMapper.selectById(12L)).thenReturn(null);
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            userService.getCurrentProfile(12L);
+        });
+
+        assertEquals("用户不存在", exception.getMessage());
     }
 }

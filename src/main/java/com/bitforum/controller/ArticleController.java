@@ -28,10 +28,14 @@ import com.bitforum.service.ArticleService;
 import com.bitforum.service.NotificationService;
 import com.bitforum.service.RedisService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/article")
+@Tag(name = "文章", description = "文章草稿、提交审核、公开查询、搜索、收藏、点赞和热门文章")
 public class ArticleController {
     @Autowired
     private ArticleService articleService;
@@ -42,11 +46,17 @@ public class ArticleController {
     private NotificationService notificationService;
 
     @PostMapping("/publish")
+    @Operation(summary = "提交文章审核", description = "需要登录。保留 publish 路径，当前语义为提交审核", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> publish(
             @Valid @RequestBody ArticlePublishRequest request,
             @RequestAttribute("userId") Long userId) {
         try {
-            articleService.publish(request.getTitle(), request.getContent(), request.getCategoryId(), userId);
+            articleService.publish(
+                    request.getTitle(),
+                    request.getContent(),
+                    request.getCategoryId(),
+                    userId,
+                    request.getCoverUrl());
             return Result.ok("提交审核成功", null);
         } catch (RuntimeException e) {
             return Result.fail(e.getMessage());
@@ -54,6 +64,7 @@ public class ArticleController {
     }
 
     @PostMapping("/draft")
+    @Operation(summary = "保存文章草稿", description = "需要登录，草稿不会进入公开列表", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<Article> saveDraft(
             @Valid @RequestBody ArticleDraftRequest request,
             @RequestAttribute("userId") Long userId) {
@@ -62,7 +73,8 @@ public class ArticleController {
                     request.getTitle(),
                     request.getContent(),
                     request.getCategoryId(),
-                    userId);
+                    userId,
+                    request.getCoverUrl());
             return Result.ok("草稿保存成功", article);
         } catch (RuntimeException e) {
             return Result.fail(e.getMessage());
@@ -70,6 +82,7 @@ public class ArticleController {
     }
 
     @PutMapping("/draft")
+    @Operation(summary = "更新文章草稿", description = "需要登录，仅作者可更新草稿或被驳回文章", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> updateDraft(
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody ArticleDraftUpdateRequest request) {
@@ -79,7 +92,8 @@ public class ArticleController {
                     request.getArticleId(),
                     request.getTitle(),
                     request.getContent(),
-                    request.getCategoryId());
+                    request.getCategoryId(),
+                    request.getCoverUrl());
             return Result.ok("草稿更新成功", null);
         } catch (RuntimeException e) {
             return Result.fail(e.getMessage());
@@ -87,6 +101,7 @@ public class ArticleController {
     }
 
     @PostMapping("/submit")
+    @Operation(summary = "提交草稿审核", description = "需要登录，将草稿或被驳回文章提交为待审核", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> submit(
             @RequestAttribute("userId") Long userId,
             @RequestParam Long articleId) {
@@ -99,6 +114,7 @@ public class ArticleController {
     }
 
     @PostMapping("/favorite")
+    @Operation(summary = "收藏文章", description = "需要登录，只能收藏已发布文章", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> favorite(
             @RequestParam Long articleId,
             @RequestAttribute("userId") Long userId) {
@@ -111,6 +127,7 @@ public class ArticleController {
     }
 
     @DeleteMapping("/favorite")
+    @Operation(summary = "取消收藏文章", description = "需要登录，只能取消自己的收藏", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> unfavorite(
             @RequestParam Long articleId,
             @RequestAttribute("userId") Long userId) {
@@ -123,6 +140,7 @@ public class ArticleController {
     }
 
     @PutMapping("/update")
+    @Operation(summary = "修改文章", description = "需要登录，仅作者可修改草稿或被驳回文章", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> update(
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody ArticleUpdateRequest request) {
@@ -134,7 +152,12 @@ public class ArticleController {
             if (!article.getUserId().equals(userId)) {
                 return Result.fail("只能修改自己的文章");
             }
-            articleService.update(userId, request.getArticleId(), request.getTitle(), request.getContent());
+            articleService.update(
+                    userId,
+                    request.getArticleId(),
+                    request.getTitle(),
+                    request.getContent(),
+                    request.getCoverUrl());
             return Result.ok("更改文章成功", null);
         } catch (RuntimeException e) {
             return Result.fail(e.getMessage());
@@ -142,6 +165,7 @@ public class ArticleController {
     }
 
     @DeleteMapping("/delete")
+    @Operation(summary = "删除文章", description = "需要登录，仅作者可删除自己的文章", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> delete(
             @RequestAttribute("userId") Long userId,
             @RequestParam Long articleId) {
@@ -161,6 +185,7 @@ public class ArticleController {
     }
 
     @GetMapping("/listAll")
+    @Operation(summary = "查询全部公开文章", description = "公开接口，返回已发布文章")
     public Result<List<Article>> listAll() {
         List<Article> articleList = articleService.listAll();
         if (articleList == null) {
@@ -170,6 +195,7 @@ public class ArticleController {
     }
 
     @GetMapping("/page")
+    @Operation(summary = "分页查询公开文章", description = "公开接口，可按板块筛选，仅返回已发布文章")
     public Result<Page<Article>> pageArticles(
             @RequestParam(defaultValue = "1") long pageNum,
             @RequestParam(defaultValue = "10") long pageSize,
@@ -179,6 +205,7 @@ public class ArticleController {
     }
 
     @GetMapping("/search")
+    @Operation(summary = "搜索公开文章", description = "公开接口，按标题或正文关键词搜索已发布文章")
     public Result<Page<Article>> searchArticles(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Long categoryId,
@@ -189,6 +216,7 @@ public class ArticleController {
     }
 
     @GetMapping("/detail")
+    @Operation(summary = "查询文章详情", description = "公开接口，仅可查询已发布文章")
     public Result<Article> detail(@RequestParam Long articleId) {
         Article article = articleService.findPublishedById(articleId);
         if (article == null) {
@@ -201,6 +229,7 @@ public class ArticleController {
     }
 
     @GetMapping("/view")
+    @Operation(summary = "增加文章浏览量", description = "公开接口，仅对已发布文章增加浏览量")
     public Result<String> view(@RequestParam Long articleId) {
         Article article = articleService.findPublishedById(articleId);
         if (article == null) {
@@ -212,6 +241,7 @@ public class ArticleController {
     }
 
     @PostMapping("/like")
+    @Operation(summary = "点赞文章", description = "需要登录，只能点赞他人的已发布文章", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> like(
             @RequestParam Long articleId,
             @RequestAttribute("userId") Long userId) {
@@ -233,6 +263,7 @@ public class ArticleController {
     }
 
     @PostMapping("/unlike")
+    @Operation(summary = "取消点赞文章", description = "需要登录，取消当前用户对文章的点赞", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> unlike(
             @RequestParam Long articleId,
             @RequestAttribute("userId") Long userId) {
@@ -246,6 +277,7 @@ public class ArticleController {
     }
 
     @GetMapping("/hot")
+    @Operation(summary = "查询热门文章", description = "公开接口，基于 Redis 热度并过滤为已发布文章")
     public Result<List<HotArticle>> hotList() {
         Set<ZSetOperations.TypedTuple<String>> hotSet = redisService.getHotList(10);
         List<HotArticle> hotList = new ArrayList<>();

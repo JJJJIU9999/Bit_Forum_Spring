@@ -86,6 +86,20 @@ public class ArticleServiceTest {
     }
 
     @Test
+    void publishShouldSaveCoverUrl() {
+        Long userId = 10008L;
+        String title = "封面文章-" + UUID.randomUUID();
+        String coverUrl = "/uploads/article-cover/publish-cover.jpg";
+
+        articleService.publish(title, "带封面的待审核文章", defaultCategoryId(), userId, coverUrl);
+
+        Article article = findByTitle(title);
+        assertNotNull(article);
+        assertEquals(coverUrl, article.getCoverUrl());
+        assertEquals(ArticleService.STATUS_PENDING, article.getStatus());
+    }
+
+    @Test
     void draftShouldNotAppearInPublicPage() {
         Long userId = 10002L;
         Article draft = articleService.saveDraft(
@@ -112,6 +126,32 @@ public class ArticleServiceTest {
 
         Article article = articleMapper.selectById(draft.getId());
         assertEquals(ArticleService.STATUS_PENDING, article.getStatus());
+    }
+
+    @Test
+    void saveAndUpdateDraftShouldPersistCoverUrl() {
+        Long userId = 10009L;
+        Long categoryId = defaultCategoryId();
+        Article draft = articleService.saveDraft(
+                "封面草稿-" + UUID.randomUUID(),
+                "草稿封面初始值",
+                categoryId,
+                userId,
+                "/uploads/article-cover/draft-old.webp");
+
+        assertEquals("/uploads/article-cover/draft-old.webp", articleMapper.selectById(draft.getId()).getCoverUrl());
+
+        articleService.updateDraft(
+                userId,
+                draft.getId(),
+                "封面草稿更新",
+                "草稿封面更新值",
+                categoryId,
+                "/uploads/article-cover/draft-new.png");
+
+        Article updated = articleMapper.selectById(draft.getId());
+        assertEquals("/uploads/article-cover/draft-new.png", updated.getCoverUrl());
+        assertEquals(ArticleService.STATUS_DRAFT, updated.getStatus());
     }
 
     @Test
@@ -393,6 +433,29 @@ public class ArticleServiceTest {
     }
 
     @Test
+    void pagePublishedArticlesByUserShouldOnlyReturnPublishedArticles() {
+        Long authorId = 12010L;
+        Long categoryId = defaultCategoryId();
+        Article published = createArticle("公开主页文章-" + UUID.randomUUID(), "应出现在公开主页", authorId,
+                categoryId, ArticleService.STATUS_PUBLISHED);
+        Article draft = createArticle("公开主页草稿-" + UUID.randomUUID(), "草稿不公开", authorId,
+                categoryId, ArticleService.STATUS_DRAFT);
+        Article offline = createArticle("公开主页下架-" + UUID.randomUUID(), "下架不公开", authorId,
+                categoryId, ArticleService.STATUS_OFFLINE);
+        Article otherAuthor = createArticle("其他作者文章-" + UUID.randomUUID(), "不属于当前作者", 12011L,
+                categoryId, ArticleService.STATUS_PUBLISHED);
+
+        Page<Article> result = articleService.pagePublishedArticlesByUser(authorId, 1, 10);
+
+        assertTrue(result.getRecords().stream().anyMatch(article -> article.getId().equals(published.getId())));
+        assertFalse(result.getRecords().stream().anyMatch(article -> article.getId().equals(draft.getId())));
+        assertFalse(result.getRecords().stream().anyMatch(article -> article.getId().equals(offline.getId())));
+        assertFalse(result.getRecords().stream().anyMatch(article -> article.getId().equals(otherAuthor.getId())));
+        assertTrue(result.getRecords().stream()
+                .allMatch(article -> ArticleService.STATUS_PUBLISHED.equals(article.getStatus())));
+    }
+
+    @Test
     void authorShouldNotUpdatePublishedArticle() {
         Article article = createArticle("禁止修改已发布文章-" + UUID.randomUUID(), "已发布内容", 12001L,
                 defaultCategoryId(), ArticleService.STATUS_PUBLISHED);
@@ -418,6 +481,22 @@ public class ArticleServiceTest {
 
         assertEquals("新草稿内容", articleMapper.selectById(draft.getId()).getContent());
         assertEquals("新驳回内容", articleMapper.selectById(rejected.getId()).getContent());
+    }
+
+    @Test
+    void authorShouldUpdateCoverUrlForDraftArticle() {
+        Article draft = createArticle("可修改封面草稿-" + UUID.randomUUID(), "旧草稿内容", 12005L,
+                defaultCategoryId(), ArticleService.STATUS_DRAFT);
+
+        articleService.update(
+                12005L,
+                draft.getId(),
+                "新草稿标题",
+                "新草稿内容",
+                "/uploads/article-cover/updated-cover.jpg");
+
+        Article updated = articleMapper.selectById(draft.getId());
+        assertEquals("/uploads/article-cover/updated-cover.jpg", updated.getCoverUrl());
     }
 
     @Test

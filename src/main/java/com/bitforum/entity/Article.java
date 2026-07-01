@@ -24,6 +24,7 @@ public class Article {
     @NotBlank(message = "内容不能为空")
     private String content;
 
+    private String coverUrl;
     private Long userId;
     private Long categoryId;
     private String status;

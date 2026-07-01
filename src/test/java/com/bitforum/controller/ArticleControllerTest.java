@@ -155,12 +155,12 @@ class ArticleControllerTest {
         mockEnabledUser("user-token", 54L);
         when(articleService.findById(4L)).thenReturn(article);
         doThrow(new RuntimeException("只能修改草稿或被驳回文章"))
-                .when(articleService).update(54L, 4L, "新标题", "新内容");
+                .when(articleService).update(54L, 4L, "新标题", "新内容", "/uploads/article-cover/cover.jpg");
 
         mockMvc.perform(put("/api/article/update")
                 .header("Authorization", "Bearer user-token")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"articleId\":4,\"title\":\"新标题\",\"content\":\"新内容\"}"))
+                .content("{\"articleId\":4,\"title\":\"新标题\",\"content\":\"新内容\",\"coverUrl\":\"/uploads/article-cover/cover.jpg\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("只能修改草稿或被驳回文章"));

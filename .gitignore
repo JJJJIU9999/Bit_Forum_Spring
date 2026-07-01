@@ -35,6 +35,7 @@ build/
 
 ### Docker ###
 mysql-data/
+uploads/
 
 ### Frontend ###
 frontend/node_modules/

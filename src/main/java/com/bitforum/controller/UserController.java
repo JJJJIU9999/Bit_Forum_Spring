@@ -13,6 +13,8 @@ import com.bitforum.entity.User;
 import com.bitforum.service.UserService;
 import com.bitforum.util.JwtUtil;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 @RestController                 // ← 声明这是一个 REST 控制器
 @RequestMapping("/api/user")    // ← 这个 Controller 下所有接口都以 /api/user 开头
+@Tag(name = "用户认证", description = "用户注册、登录和 JWT 获取")
 
 public class UserController {
     @Autowired
@@ -30,6 +33,7 @@ public class UserController {
     private JwtUtil jwtUtil;
 
     @PostMapping("/register")       // ← POST /api/user/register
+    @Operation(summary = "用户注册", description = "注册普通用户，响应不返回 password")
     public Result<UserResponse> register(@Valid @RequestBody UserRegisterRequest request) {
         // @RequestBody 从 JSON 请求体取参数，@Valid 触发 UserRegisterRequest 上的校验注解
         User user = userService.register(request.getUsername(),request.getPassword());
@@ -42,6 +46,7 @@ public class UserController {
 
 
     @PostMapping("/login")          // ← POST /api/user/login
+    @Operation(summary = "用户登录", description = "登录成功后返回 JWT Bearer Token")
     public Result<LoginResponse> login(@Valid @RequestBody UserLoginRequest request) {
         // 登录也使用 Request DTO，避免用户名和密码继续散落在 URL 查询参数中
         User user = userService.login(request.getUsername(),request.getPassword());

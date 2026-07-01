@@ -16,15 +16,21 @@ import com.bitforum.dto.CommentReportRequest;
 import com.bitforum.entity.ContentReport;
 import com.bitforum.service.ContentReportService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/user/reports")
+@Tag(name = "举报治理", description = "用户举报文章、举报评论和查看自己的举报记录")
+@SecurityRequirement(name = "bearerAuth")
 public class UserReportController {
     @Autowired
     private ContentReportService contentReportService;
 
     @PostMapping("/article")
+    @Operation(summary = "举报文章", description = "只能举报他人的已发布文章")
     public Result<ContentReport> reportArticle(
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody ArticleReportRequest request) {
@@ -40,6 +46,7 @@ public class UserReportController {
     }
 
     @PostMapping("/comment")
+    @Operation(summary = "举报评论", description = "只能举报他人的评论，且评论所属文章需已发布")
     public Result<ContentReport> reportComment(
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody CommentReportRequest request) {
@@ -55,6 +62,7 @@ public class UserReportController {
     }
 
     @GetMapping
+    @Operation(summary = "分页查询我的举报记录")
     public Result<Page<ContentReport>> pageMyReports(
             @RequestAttribute("userId") Long userId,
             @RequestParam(defaultValue = "1") long pageNum,
@@ -63,4 +71,3 @@ public class UserReportController {
         return Result.ok("我的举报分页查询成功", reportPage);
     }
 }
-

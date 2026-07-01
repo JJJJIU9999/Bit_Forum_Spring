@@ -12,13 +12,20 @@ import com.bitforum.common.Result;
 import com.bitforum.entity.Comment;
 import com.bitforum.service.CommentService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/admin/comment")
+@Tag(name = "管理员评论", description = "管理员评论分页和删除")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminCommentController {
     @Autowired
     private CommentService commentService;
 
     @GetMapping("/page")
+    @Operation(summary = "管理员分页查询评论")
     public Result<Page<Comment>> pageComments(
             @RequestParam(defaultValue = "1") long pageNum,
             @RequestParam(defaultValue = "10") long pageSize) {
@@ -28,6 +35,7 @@ public class AdminCommentController {
     }
 
     @DeleteMapping("/delete")
+    @Operation(summary = "管理员删除评论")
     public Result<String> deleteComment(@RequestParam Long commentId) {
         // 管理员可以删除任意评论；Service 用 boolean 区分“已删除”和“评论不存在”。
         boolean deleted = commentService.deleteByAdmin(commentId);

@@ -1,7 +1,11 @@
 package com.bitforum.config;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -32,13 +36,24 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/article/unlike",
                         "/api/article/update",
                         "/api/article/delete",
+                        "/api/user/profile",
                         "/api/user/articles",
                         "/api/user/favorites",
                         "/api/user/notifications",
                         "/api/user/notifications/**",
                         "/api/user/reports",
                         "/api/user/reports/**",
+                        "/api/users/*/follow",
+                        "/api/upload/avatar",
+                        "/api/upload/article-cover",
                         "/api/comment/publish"
                 );   
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        Path uploadPath = Paths.get("uploads").toAbsolutePath().normalize();
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations(uploadPath.toUri().toString());
     }
 }

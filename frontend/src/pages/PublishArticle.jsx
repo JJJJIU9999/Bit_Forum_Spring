@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { publishArticle, saveDraft } from '../api/articleApi.js'
 import { listCategories } from '../api/categoryApi.js'
+import { uploadArticleCover } from '../api/uploadApi.js'
 import PageHeader from '../components/PageHeader.jsx'
 import MessageBanner from '../components/MessageBanner.jsx'
 
 function PublishArticle({ currentUser, onPublished }) {
-  const [form, setForm] = useState({ title: '', content: '', categoryId: '' })
+  const [form, setForm] = useState({ title: '', content: '', categoryId: '', coverUrl: '' })
   const [categories, setCategories] = useState([])
+  const [coverFile, setCoverFile] = useState(null)
+  const [coverInputKey, setCoverInputKey] = useState(0)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)
+  const [coverUploading, setCoverUploading] = useState(false)
 
   useEffect(() => {
     async function loadCategories() {
@@ -35,6 +39,49 @@ function PublishArticle({ currentUser, onPublished }) {
     setForm((current) => ({ ...current, [name]: value }))
   }
 
+  function payloadFromForm() {
+    return {
+      title: form.title,
+      content: form.content,
+      categoryId: Number(form.categoryId),
+      coverUrl: form.coverUrl.trim() || null,
+    }
+  }
+
+  function resetForm() {
+    setForm((current) => ({ title: '', content: '', categoryId: current.categoryId, coverUrl: '' }))
+    setCoverFile(null)
+    setCoverInputKey((key) => key + 1)
+  }
+
+  async function handleCoverUpload() {
+    if (!currentUser) {
+      setMessage('请先登录，再上传封面。')
+      setMessageType('error')
+      return
+    }
+    if (!coverFile) {
+      setMessage('请选择要上传的封面图片。')
+      setMessageType('error')
+      return
+    }
+
+    setCoverUploading(true)
+    setMessage('')
+
+    try {
+      const result = await uploadArticleCover(coverFile)
+      setForm((current) => ({ ...current, coverUrl: result.data.url }))
+      setMessage('封面上传成功。')
+      setMessageType('info')
+    } catch (error) {
+      setMessage(error.message)
+      setMessageType('error')
+    } finally {
+      setCoverUploading(false)
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
 
@@ -54,12 +101,8 @@ function PublishArticle({ currentUser, onPublished }) {
     setMessage('')
 
     try {
-      await publishArticle({
-        title: form.title,
-        content: form.content,
-        categoryId: Number(form.categoryId),
-      })
-      setForm((current) => ({ title: '', content: '', categoryId: current.categoryId }))
+      await publishArticle(payloadFromForm())
+      resetForm()
       setMessage('提交审核成功，可在"我的文章"查看状态。')
       setMessageType('info')
       onPublished()
@@ -88,12 +131,8 @@ function PublishArticle({ currentUser, onPublished }) {
     setMessage('')
 
     try {
-      await saveDraft({
-        title: form.title,
-        content: form.content,
-        categoryId: Number(form.categoryId),
-      })
-      setForm((current) => ({ title: '', content: '', categoryId: current.categoryId }))
+      await saveDraft(payloadFromForm())
+      resetForm()
       setMessage('草稿保存成功。')
       setMessageType('info')
       onPublished()
@@ -145,13 +184,45 @@ function PublishArticle({ currentUser, onPublished }) {
         />
       </label>
 
+      <div className="upload-field">
+        <label>
+          封面 URL
+          <input
+            name="coverUrl"
+            onChange={updateField}
+            placeholder="/uploads/article-cover/example.jpg"
+            type="text"
+            value={form.coverUrl}
+          />
+        </label>
+        <div className="file-upload-row">
+          <input
+            key={coverInputKey}
+            accept="image/jpeg,image/png,image/webp"
+            type="file"
+            onChange={(event) => setCoverFile(event.target.files?.[0] || null)}
+          />
+          <button
+            className="ghost-button"
+            disabled={loading || draftLoading || coverUploading}
+            type="button"
+            onClick={handleCoverUpload}
+          >
+            {coverUploading ? '上传中...' : '上传封面'}
+          </button>
+        </div>
+        {form.coverUrl && (
+          <img className="cover-preview" alt="文章封面预览" src={form.coverUrl} />
+        )}
+      </div>
+
       <div className="form-action-row">
-        <button className="primary-button" disabled={loading || draftLoading} type="submit">
+        <button className="primary-button" disabled={loading || draftLoading || coverUploading} type="submit">
           {loading ? '提交中...' : '提交审核'}
         </button>
         <button
           className="ghost-button"
-          disabled={loading || draftLoading}
+          disabled={loading || draftLoading || coverUploading}
           type="button"
           onClick={handleSaveDraft}
         >

@@ -6,6 +6,10 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 6MB
   data:
     redis:
       host: localhost
@@ -29,3 +33,22 @@ spring:
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:604800000}
+
+bitforum:
+  article-metric-sync:
+    fixed-delay: ${ARTICLE_METRIC_SYNC_FIXED_DELAY:300000}
+    initial-delay: ${ARTICLE_METRIC_SYNC_INITIAL_DELAY:300000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      status:
+        http-mapping:
+          down: 200
+          out-of-service: 200
+          unknown: 200

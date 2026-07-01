@@ -12,13 +12,20 @@ import com.bitforum.common.Result;
 import com.bitforum.entity.Article;
 import com.bitforum.service.ArticleService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/user/articles")
+@Tag(name = "我的内容", description = "当前登录用户的文章、收藏、通知和举报等个人内容")
+@SecurityRequirement(name = "bearerAuth")
 public class UserArticleController {
     @Autowired
     private ArticleService articleService;
 
     @GetMapping
+    @Operation(summary = "分页查询我的文章", description = "需要登录，可按文章状态筛选")
     public Result<Page<Article>> pageMyArticles(
             @RequestAttribute("userId") Long userId,
             @RequestParam(defaultValue = "1") long pageNum,

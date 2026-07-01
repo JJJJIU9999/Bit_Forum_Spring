@@ -19,15 +19,21 @@ import com.bitforum.service.CategoryService;
 import com.bitforum.service.CategoryService.CategoryDeleteResult;
 import com.bitforum.service.CategoryService.CategoryUpdateResult;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/admin/category")
+@Tag(name = "管理员板块", description = "管理员板块分页、创建、更新、启用、禁用和删除")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminCategoryController {
     @Autowired
     private CategoryService categoryService;
 
     @GetMapping("/page")
+    @Operation(summary = "管理员分页查询板块")
     public Result<Page<Category>> pageCategories(
             @RequestParam(defaultValue = "1") long pageNum,
             @RequestParam(defaultValue = "10") long pageSize,
@@ -36,6 +42,7 @@ public class AdminCategoryController {
     }
 
     @PostMapping("/create")
+    @Operation(summary = "管理员创建板块")
     public Result<Category> create(@Valid @RequestBody CategoryCreateRequest request) {
         try {
             Category category = categoryService.create(
@@ -49,6 +56,7 @@ public class AdminCategoryController {
     }
 
     @PutMapping("/update")
+    @Operation(summary = "管理员更新板块")
     public Result<String> update(@Valid @RequestBody CategoryUpdateRequest request) {
         CategoryUpdateResult result = categoryService.update(
                 request.getCategoryId(),
@@ -65,6 +73,7 @@ public class AdminCategoryController {
     }
 
     @PutMapping("/enable")
+    @Operation(summary = "管理员启用板块")
     public Result<String> enable(@RequestParam Long categoryId) {
         CategoryUpdateResult result = categoryService.enable(categoryId);
         if (result == CategoryUpdateResult.NOT_FOUND) {
@@ -74,6 +83,7 @@ public class AdminCategoryController {
     }
 
     @PutMapping("/disable")
+    @Operation(summary = "管理员禁用板块")
     public Result<String> disable(@RequestParam Long categoryId) {
         CategoryUpdateResult result = categoryService.disable(categoryId);
         if (result == CategoryUpdateResult.NOT_FOUND) {
@@ -83,6 +93,7 @@ public class AdminCategoryController {
     }
 
     @DeleteMapping("/delete")
+    @Operation(summary = "管理员删除无文章板块")
     public Result<String> delete(@RequestParam Long categoryId) {
         CategoryDeleteResult result = categoryService.delete(categoryId);
         if (result == CategoryDeleteResult.NOT_FOUND) {

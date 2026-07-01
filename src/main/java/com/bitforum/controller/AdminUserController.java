@@ -14,13 +14,20 @@ import com.bitforum.dto.AdminUserResponse;
 import com.bitforum.service.UserService;
 import com.bitforum.service.UserService.UserStatusUpdateResult;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/admin/user")
+@Tag(name = "管理员用户", description = "管理员用户分页、启用和禁用")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminUserController {
     @Autowired
     private UserService userService;
 
     @GetMapping("/page")
+    @Operation(summary = "管理员分页查询用户", description = "返回脱敏用户信息，不包含 password")
     public Result<Page<AdminUserResponse>> pageUsers(
             @RequestParam(defaultValue = "1") long pageNum,
             @RequestParam(defaultValue = "10") long pageSize) {
@@ -30,6 +37,7 @@ public class AdminUserController {
     }
 
     @PutMapping("/disable")
+    @Operation(summary = "管理员禁用用户", description = "不能禁用当前管理员自己")
     public Result<String> disableUser(
             @RequestAttribute("userId") Long currentAdminId,
             @RequestParam Long userId) {
@@ -45,6 +53,7 @@ public class AdminUserController {
     }
 
     @PutMapping("/enable")
+    @Operation(summary = "管理员启用用户")
     public Result<String> enableUser(@RequestParam Long userId) {
         UserStatusUpdateResult result = userService.enableUser(userId);
         if (result == UserStatusUpdateResult.USER_NOT_FOUND) {

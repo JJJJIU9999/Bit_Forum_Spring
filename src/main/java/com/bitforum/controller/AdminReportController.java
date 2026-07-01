@@ -15,15 +15,21 @@ import com.bitforum.dto.ReportHandleRequest;
 import com.bitforum.entity.ContentReport;
 import com.bitforum.service.ContentReportService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/admin/reports")
+@Tag(name = "举报治理", description = "管理员分页查看举报并处理成立或驳回")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminReportController {
     @Autowired
     private ContentReportService contentReportService;
 
     @GetMapping
+    @Operation(summary = "管理员分页查询举报")
     public Result<Page<ContentReport>> pageReports(
             @RequestParam(defaultValue = "1") long pageNum,
             @RequestParam(defaultValue = "10") long pageSize,
@@ -37,6 +43,7 @@ public class AdminReportController {
     }
 
     @PutMapping("/resolve")
+    @Operation(summary = "管理员处理举报成立", description = "只记录处理结果，不自动下架文章或删除评论")
     public Result<String> resolve(
             @RequestAttribute("userId") Long handlerId,
             @Valid @RequestBody ReportHandleRequest request) {
@@ -49,6 +56,7 @@ public class AdminReportController {
     }
 
     @PutMapping("/reject")
+    @Operation(summary = "管理员驳回举报")
     public Result<String> reject(
             @RequestAttribute("userId") Long handlerId,
             @Valid @RequestBody ReportHandleRequest request) {
@@ -60,4 +68,3 @@ public class AdminReportController {
         }
     }
 }
-

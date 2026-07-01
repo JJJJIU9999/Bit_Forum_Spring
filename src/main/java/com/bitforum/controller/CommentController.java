@@ -12,6 +12,9 @@ import com.bitforum.dto.CommentPublishRequest;
 import com.bitforum.entity.Comment;
 import com.bitforum.service.CommentService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,11 +26,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 @RestController
 @RequestMapping("/api/comment")
+@Tag(name = "评论", description = "文章评论发布和查询")
 public class CommentController {
     @Autowired
     private CommentService commentService;
 
     @PostMapping("/publish")
+    @Operation(summary = "发表评论", description = "需要登录，只能评论已发布文章", security = @SecurityRequirement(name = "bearerAuth"))
     public Result<String> publish(
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody CommentPublishRequest request) {
@@ -41,6 +46,7 @@ public class CommentController {
     }
         
     @GetMapping("/listAll")
+    @Operation(summary = "查询文章评论", description = "公开接口，按文章 ID 查询评论列表")
     public Result<List<Comment>> listByArticle(@RequestParam Long articleId) {
         List<Comment> commentList = commentService.listByArticleId(articleId);
         return Result.ok("查询成功", commentList);

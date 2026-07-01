@@ -62,6 +62,13 @@ request.interceptors.response.use(
     return body
   },
   (error) => {
+    const isMultipartRequest =
+      typeof FormData !== 'undefined' && error.config?.data instanceof FormData
+
+    if (error.message === 'Network Error' && isMultipartRequest) {
+      return Promise.reject(new Error('上传请求被中断，请检查图片大小：头像不超过 2MB，文章封面不超过 5MB。'))
+    }
+
     // 后端没启动、代理连不上时，axios 通常只给 Network Error。
     if (error.message === 'Network Error') {
       return Promise.reject(new Error('无法连接后端服务，请确认 Spring Boot 已在 8080 端口启动。'))

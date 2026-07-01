@@ -6,6 +6,13 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 1
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 6MB
   data:
     redis:
       host: localhost
@@ -28,3 +35,17 @@ spring:
 jwt:
   secret: bit-forum-test-secret-minimum-32-bytes
   expiration: 604800000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      status:
+        http-mapping:
+          down: 200
+          out-of-service: 200
+          unknown: 200

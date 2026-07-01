@@ -2,8 +2,11 @@ import StatusBadge from './StatusBadge.jsx'
 
 function ArticleCard({ article, onOpen, statusLabel, children }) {
   return (
-    <article className="article-item">
-      <div>
+    <article className={children ? 'article-item article-item-with-footer' : 'article-item'}>
+      <div className="article-main">
+        {article.coverUrl && (
+          <img className="article-cover-thumb" alt={`${article.title} 封面`} src={article.coverUrl} />
+        )}
         <span>
           #{article.id}
           {article.categoryName ? ` · ${article.categoryName}` : ''}
@@ -26,6 +29,7 @@ function ArticleCard({ article, onOpen, statusLabel, children }) {
           </button>
         )}
       </div>
+      {children && <div className="article-card-footer">{children}</div>}
     </article>
   )
 }

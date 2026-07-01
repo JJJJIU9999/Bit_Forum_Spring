@@ -5,11 +5,21 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bitforum.dto.AdminUserResponse;
+import com.bitforum.dto.PublicUserProfileResponse;
+import com.bitforum.dto.UserProfileResponse;
+import com.bitforum.dto.UserProfileUpdateRequest;
+import com.bitforum.entity.Article;
+import com.bitforum.entity.ArticleFavorite;
 import com.bitforum.entity.User;
+import com.bitforum.entity.UserFollow;
+import com.bitforum.mapper.ArticleFavoriteMapper;
+import com.bitforum.mapper.ArticleMapper;
+import com.bitforum.mapper.UserFollowMapper;
 import com.bitforum.mapper.UserMapper;
 
 @Service
@@ -22,6 +32,12 @@ public class UserService {
 
     @Autowired
     private UserMapper userMapper;
+    @Autowired
+    private ArticleMapper articleMapper;
+    @Autowired
+    private ArticleFavoriteMapper articleFavoriteMapper;
+    @Autowired
+    private UserFollowMapper userFollowMapper;
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
@@ -71,6 +87,41 @@ public class UserService {
         return userMapper.selectById(userId);
     }
 
+    public UserProfileResponse getCurrentProfile(Long userId) {
+        User user = requireUser(userId);
+        return UserProfileResponse.from(user, countPublishedArticles(userId), countFavorites(userId));
+    }
+
+    @Transactional
+    public UserProfileResponse updateProfile(Long userId, UserProfileUpdateRequest request) {
+        User user = requireUser(userId);
+        user.setAvatar(request.getAvatar());
+        user.setNickname(request.getNickname());
+        user.setBio(request.getBio());
+        userMapper.updateById(user);
+
+        User saved = userMapper.selectById(userId);
+        if (saved == null) {
+            saved = user;
+        }
+        return UserProfileResponse.from(saved, countPublishedArticles(userId), countFavorites(userId));
+    }
+
+    public PublicUserProfileResponse getPublicProfile(Long userId) {
+        return getPublicProfile(userId, null);
+    }
+
+    public PublicUserProfileResponse getPublicProfile(Long userId, Long currentUserId) {
+        User user = requireUser(userId);
+        return PublicUserProfileResponse.from(
+                user,
+                countPublishedArticles(userId),
+                countFavorites(userId),
+                countFollowing(userId),
+                countFollowers(userId),
+                isFollowing(currentUserId, userId));
+    }
+
     // 管理员查用户列表（分页）：查 User → 转 AdminUserResponse 脱敏 password
     public Page<AdminUserResponse> pageUsers(long pageNum, long pageSize) {
         Page<User> userPage = new Page<>(pageNum, pageSize);
@@ -111,6 +162,45 @@ public class UserService {
         user.setStatus(status);
         userMapper.updateById(user);
         return UserStatusUpdateResult.SUCCESS;
+    }
+
+    private User requireUser(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        return user;
+    }
+
+    private Long countPublishedArticles(Long userId) {
+        return articleMapper.selectCount(new QueryWrapper<Article>()
+                .eq("user_id", userId)
+                .eq("status", ArticleService.STATUS_PUBLISHED));
+    }
+
+    private Long countFavorites(Long userId) {
+        return articleFavoriteMapper.selectCount(new QueryWrapper<ArticleFavorite>()
+                .eq("user_id", userId));
+    }
+
+    private Long countFollowing(Long userId) {
+        return userFollowMapper.selectCount(new QueryWrapper<UserFollow>()
+                .eq("follower_id", userId));
+    }
+
+    private Long countFollowers(Long userId) {
+        return userFollowMapper.selectCount(new QueryWrapper<UserFollow>()
+                .eq("following_id", userId));
+    }
+
+    private boolean isFollowing(Long followerId, Long followingId) {
+        if (followerId == null || followingId == null || followerId.equals(followingId)) {
+            return false;
+        }
+        Long count = userFollowMapper.selectCount(new QueryWrapper<UserFollow>()
+                .eq("follower_id", followerId)
+                .eq("following_id", followingId));
+        return count > 0;
     }
 
     public enum UserStatusUpdateResult {

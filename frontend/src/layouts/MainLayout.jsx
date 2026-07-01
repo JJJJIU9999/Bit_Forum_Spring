@@ -11,7 +11,11 @@ function MainLayout({ currentUser, activePage, onNavigate, onLogout, unreadCount
 
           <nav className="header-nav">
             <button
-              className={activePage === 'articles' || activePage === 'detail' ? 'nav-active' : ''}
+              className={
+                activePage === 'articles' || activePage === 'detail' || activePage === 'publicProfile'
+                  ? 'nav-active'
+                  : ''
+              }
               type="button"
               onClick={() => onNavigate('articles')}
             >
