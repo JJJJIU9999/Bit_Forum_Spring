@@ -2,6 +2,7 @@ package com.bitforum.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
@@ -32,6 +33,7 @@ public class RedisServiceTest {
     @BeforeEach
     void setUp() {
         // 每个测试开始前清理测试 key，避免 Redis 里的旧数据影响本次断言
+        stringRedisTemplate.delete("article:" + articleId + ":views");
         stringRedisTemplate.delete("article:" + articleId + ":likes");
         stringRedisTemplate.opsForZSet().remove("article:hot",
                 lowHotArticleId.toString(),
@@ -43,6 +45,7 @@ public class RedisServiceTest {
     @AfterEach
     void tearDown() {
         // 测试结束后再清理一次，避免测试数据留在 Redis 中影响手动调试
+        stringRedisTemplate.delete("article:" + articleId + ":views");
         stringRedisTemplate.delete("article:" + articleId + ":likes");
         stringRedisTemplate.opsForZSet().remove("article:hot",
                 lowHotArticleId.toString(),
@@ -60,6 +63,18 @@ public class RedisServiceTest {
         assertFalse(secondLike);
         assertEquals(1L, redisService.getLikeCount(articleId));
         assertTrue(redisService.hasLiked(articleId, userId));
+    }
+
+    @Test
+    void nullableMetricReadersShouldReturnNullWhenRedisKeyMissing() {
+        assertNull(redisService.getViewsIfPresent(articleId));
+        assertNull(redisService.getLikeCountIfPresent(articleId));
+
+        redisService.increaseViews(articleId);
+        redisService.like(articleId, userId);
+
+        assertEquals(1L, redisService.getViewsIfPresent(articleId));
+        assertEquals(1L, redisService.getLikeCountIfPresent(articleId));
     }
 
     @Test

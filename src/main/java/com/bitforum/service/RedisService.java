@@ -21,8 +21,13 @@ public class RedisService {
 
     //查当前浏览量
     public Long getViews(Long articleId) {
+        Long value = getViewsIfPresent(articleId);
+        return value == null ? 0L : value;
+    }
+
+    public Long getViewsIfPresent(Long articleId) {
         String value = redisTemplate.opsForValue().get("article:" + articleId + ":views");
-        return value == null ? 0L : Long.parseLong(value);
+        return value == null ? null : Long.parseLong(value);
     }
 
     //文章点赞，返回 true 表示这次是第一次点赞；返回 false 表示用户已经点过赞
@@ -44,6 +49,15 @@ public class RedisService {
 
     //获取点赞数量
     public Long getLikeCount(Long articleId) {
+        Long count = getLikeCountIfPresent(articleId);
+        return count == null ? 0L : count;
+    }
+
+    public Long getLikeCountIfPresent(Long articleId) {
+        Boolean exists = redisTemplate.hasKey("article:" + articleId + ":likes");
+        if (!Boolean.TRUE.equals(exists)) {
+            return null;
+        }
         Long size = redisTemplate.opsForSet().size("article:" + articleId + ":likes");
         return size == null ? 0L : size;
     }
