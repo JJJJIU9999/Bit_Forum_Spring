@@ -70,6 +70,7 @@ class UserControllerTest {
         User user = new User();
         user.setId(1L);
         user.setUsername("testuser");
+        user.setRole(UserService.ROLE_ADMIN);
 
         // 用 Mockito 固定依赖返回值，让这个测试只关注 Controller 的响应格式
         when(userService.login("testuser", "123456")).thenReturn(user);
@@ -92,6 +93,7 @@ class UserControllerTest {
                 // LoginResponse 会被序列化到 data 下，这里锁定 token 和用户基础信息不会丢
                 .andExpect(jsonPath("$.data.token").value("mock-token"))
                 .andExpect(jsonPath("$.data.userId").value(1))
-                .andExpect(jsonPath("$.data.username").value("testuser"));
+                .andExpect(jsonPath("$.data.username").value("testuser"))
+                .andExpect(jsonPath("$.data.role").value(UserService.ROLE_ADMIN));
     }
 }

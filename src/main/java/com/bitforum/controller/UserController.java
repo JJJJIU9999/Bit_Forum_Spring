@@ -56,7 +56,7 @@ public class UserController {
         // 登录成功后生成 Token；密钥和过期时间来自 application.yml 的 jwt 配置
         String token = jwtUtil.generateToken(user.getId(), user.getUsername());
         // 用明确的 LoginResponse DTO 替代 Map，避免登录响应字段变得松散、不好维护
-        LoginResponse response = new LoginResponse(token, user.getId(), user.getUsername());
+        LoginResponse response = new LoginResponse(token, user.getId(), user.getUsername(), user.getRole());
         return Result.ok("登录成功！", response);
     }
     

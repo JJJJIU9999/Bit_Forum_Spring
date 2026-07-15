@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { checkAdminHealth, deleteAdminArticle, offlineArticle, pageAdminArticles } from '../../api/adminApi.js'
+import { deleteAdminArticle, offlineArticle, pageAdminArticles } from '../../api/adminApi.js'
 import PageHeader from '../../components/PageHeader.jsx'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Pagination from '../../components/Pagination.jsx'
@@ -8,7 +8,7 @@ import MessageBanner from '../../components/MessageBanner.jsx'
 import ConfirmDialog from '../../components/ConfirmDialog.jsx'
 import { STATUS_LABELS } from './adminHelpers.js'
 
-function ManageArticles({ currentUser }) {
+function ManageArticles() {
   const [records, setRecords] = useState([])
   const [pageInfo, setPageInfo] = useState({ current: 1, pages: 1, total: 0 })
   const [pageNum, setPageNum] = useState(1)
@@ -19,11 +19,9 @@ function ManageArticles({ currentUser }) {
 
   useEffect(() => {
     async function load() {
-      if (!currentUser) return
       setLoading(true)
       setMessage('')
       try {
-        await checkAdminHealth()
         const result = await pageAdminArticles({ pageNum, pageSize: 6 })
         setRecords(result.data.records || [])
         setPageInfo({ current: result.data.current, pages: result.data.pages, total: result.data.total })
@@ -35,7 +33,7 @@ function ManageArticles({ currentUser }) {
       }
     }
     load()
-  }, [currentUser, pageNum, refreshKey])
+  }, [pageNum, refreshKey])
 
   function doAction(action, okMsg) {
     setLoading(true)

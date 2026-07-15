@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  checkAdminHealth, createCategory, deleteCategory, disableCategory,
+  createCategory, deleteCategory, disableCategory,
   enableCategory, pageAdminCategories, updateCategory,
 } from '../../api/adminApi.js'
 import PageHeader from '../../components/PageHeader.jsx'
@@ -11,7 +11,7 @@ import ConfirmDialog from '../../components/ConfirmDialog.jsx'
 
 const EMPTY_FORM = { categoryId: null, name: '', description: '', sortOrder: 0 }
 
-function ManageCategories({ currentUser }) {
+function ManageCategories() {
   const [records, setRecords] = useState([])
   const [pageInfo, setPageInfo] = useState({ current: 1, pages: 1, total: 0 })
   const [pageNum, setPageNum] = useState(1)
@@ -23,11 +23,9 @@ function ManageCategories({ currentUser }) {
 
   useEffect(() => {
     async function load() {
-      if (!currentUser) return
       setLoading(true)
       setMessage('')
       try {
-        await checkAdminHealth()
         const result = await pageAdminCategories({ pageNum, pageSize: 6 })
         setRecords(result.data.records || [])
         setPageInfo({ current: result.data.current, pages: result.data.pages, total: result.data.total })
@@ -39,7 +37,7 @@ function ManageCategories({ currentUser }) {
       }
     }
     load()
-  }, [currentUser, pageNum, refreshKey])
+  }, [pageNum, refreshKey])
 
   function doAction(action, okMsg) {
     setLoading(true)

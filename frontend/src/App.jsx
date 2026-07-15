@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useOutletContext } from 'react-router'
 import MainLayout from './layouts/MainLayout.jsx'
 import AdminLayout from './layouts/AdminLayout.jsx'
 import Login from './pages/Login.jsx'
@@ -19,16 +20,11 @@ import ManageCategories from './pages/admin/ManageCategories.jsx'
 import { clearAuth, getCurrentUser } from './api/request.js'
 import { getUnreadNotificationCount } from './api/notificationApi.js'
 
+const ADMIN_ROLE = 'ADMIN'
+
 function App() {
   const [currentUser, setCurrentUser] = useState(getCurrentUser())
-  const [activePage, setActivePage] = useState(currentUser ? 'articles' : 'login')
-  const [selectedArticleId, setSelectedArticleId] = useState(null)
-  const [selectedUserId, setSelectedUserId] = useState(null)
-  const [listRefreshKey, setListRefreshKey] = useState(0)
-  const [myArticleRefreshKey, setMyArticleRefreshKey] = useState(0)
-  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0)
   const [unreadCount, setUnreadCount] = useState(0)
-  const [adminTab, setAdminTab] = useState('dashboard')
 
   async function refreshUnreadCount() {
     if (!currentUser) {
@@ -46,150 +42,121 @@ function App() {
 
   useEffect(() => {
     refreshUnreadCount()
-  }, [currentUser, notificationRefreshKey])
+  }, [currentUser])
 
-  function openDetail(articleId) {
-    setSelectedArticleId(articleId)
-    setActivePage('detail')
-  }
+  const sharedProps = { currentUser, setCurrentUser, unreadCount, refreshUnreadCount }
 
-  function openUserProfile(userId) {
-    setSelectedUserId(userId)
-    setActivePage('publicProfile')
-  }
+  return (
+    <Routes>
+      <Route element={<PublicShell {...sharedProps} />}>
+        <Route index element={<ArticleList />} />
+        <Route path="articles/:articleId" element={<ArticleDetail />} />
+        <Route path="users/:userId" element={<PublicUserProfile />} />
+        <Route path="login" element={<Login />} />
+        <Route path="register" element={<Register />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="publish" element={<PublishArticle />} />
+          <Route path="notifications" element={<NotificationCenter />} />
+          <Route path="me/:tab" element={<MyArticles />} />
+          <Route path="me" element={<Navigate to="/me/profile" replace />} />
+        </Route>
+      </Route>
 
-  function handleLogin(user) {
-    setCurrentUser(user)
-    setActivePage('articles')
-  }
+      <Route element={<AdminRoute {...sharedProps} />}>
+        <Route path="admin" element={<AdminShell {...sharedProps} />}>
+          <Route index element={<Dashboard />} />
+          <Route path="audit" element={<AuditArticles />} />
+          <Route path="articles" element={<ManageArticles />} />
+          <Route path="comments" element={<ManageComments />} />
+          <Route path="reports" element={<ManageReports />} />
+          <Route path="users" element={<ManageUsers />} />
+          <Route path="categories" element={<ManageCategories />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  )
+}
+
+function PublicShell({ currentUser, setCurrentUser, unreadCount, refreshUnreadCount }) {
+  const navigate = useNavigate()
 
   function handleLogout() {
     clearAuth()
     setCurrentUser(null)
-    setSelectedArticleId(null)
-    setSelectedUserId(null)
-    setUnreadCount(0)
-    setActivePage('login')
-  }
-
-  function handlePublished() {
-    setListRefreshKey((k) => k + 1)
-    setMyArticleRefreshKey((k) => k + 1)
-    setActivePage('myArticles')
-  }
-
-  function renderPage() {
-    if (activePage === 'login') {
-      return (
-        <>
-          <div className="tabs">
-            <button className="active" type="button">登录</button>
-            <button type="button" onClick={() => setActivePage('register')}>注册</button>
-          </div>
-          <Login onLogin={handleLogin} />
-        </>
-      )
-    }
-
-    if (activePage === 'register') {
-      return (
-        <>
-          <div className="tabs">
-            <button type="button" onClick={() => setActivePage('login')}>登录</button>
-            <button className="active" type="button">注册</button>
-          </div>
-          <Register onRegistered={() => setActivePage('login')} />
-        </>
-      )
-    }
-
-    if (activePage === 'articles') {
-      return <ArticleList refreshKey={listRefreshKey} onOpenDetail={openDetail} />
-    }
-
-    if (activePage === 'detail') {
-      return (
-        <ArticleDetail
-          articleId={selectedArticleId}
-          currentUser={currentUser}
-          onBack={() => setActivePage('articles')}
-          onOpenUserProfile={openUserProfile}
-        />
-      )
-    }
-
-    if (activePage === 'publicProfile') {
-      return (
-        <PublicUserProfile
-          userId={selectedUserId}
-          currentUser={currentUser}
-          onBack={() => setActivePage(selectedArticleId ? 'detail' : 'articles')}
-          onOpenDetail={openDetail}
-        />
-      )
-    }
-
-    if (activePage === 'publish') {
-      return <PublishArticle currentUser={currentUser} onPublished={handlePublished} />
-    }
-
-    if (activePage === 'myArticles') {
-      return <MyArticles currentUser={currentUser} refreshKey={myArticleRefreshKey} />
-    }
-
-    if (activePage === 'notifications') {
-      return (
-        <NotificationCenter
-          currentUser={currentUser}
-          refreshKey={notificationRefreshKey}
-          onOpenArticle={openDetail}
-          onUnreadChanged={() => setNotificationRefreshKey((k) => k + 1)}
-        />
-      )
-    }
-
-    return null
-  }
-
-  function renderAdminPage() {
-    const props = { currentUser }
-
-    switch (adminTab) {
-      case 'dashboard': return <Dashboard {...props} />
-      case 'audit': return <AuditArticles {...props} />
-      case 'articles': return <ManageArticles {...props} />
-      case 'comments': return <ManageComments {...props} />
-      case 'reports': return <ManageReports {...props} />
-      case 'users': return <ManageUsers {...props} />
-      case 'categories': return <ManageCategories {...props} />
-      default: return <Dashboard {...props} />
-    }
-  }
-
-  if (activePage === 'admin') {
-    return (
-      <AdminLayout
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onBackToSite={() => setActivePage('articles')}
-        activeTab={adminTab}
-        onTabChange={setAdminTab}
-      >
-        {renderAdminPage()}
-      </AdminLayout>
-    )
+    navigate('/login')
   }
 
   return (
     <MainLayout
       currentUser={currentUser}
-      activePage={activePage}
-      onNavigate={setActivePage}
-      onLogout={handleLogout}
       unreadCount={unreadCount}
+      onLogout={handleLogout}
     >
-      {renderPage()}
+      <Outlet context={{ currentUser, setCurrentUser, refreshUnreadCount }} />
     </MainLayout>
+  )
+}
+
+function ProtectedRoute() {
+  const context = useOutletContext()
+  const location = useLocation()
+
+  if (!context.currentUser) {
+    const redirectTo = `${location.pathname}${location.search}`
+    return <Navigate replace to={`/login?redirectTo=${encodeURIComponent(redirectTo)}`} />
+  }
+
+  return <Outlet context={context} />
+}
+
+function AdminRoute({ currentUser }) {
+  const location = useLocation()
+
+  if (!currentUser) {
+    const redirectTo = `${location.pathname}${location.search}`
+    return <Navigate replace to={`/login?redirectTo=${encodeURIComponent(redirectTo)}`} />
+  }
+
+  if (currentUser.role !== ADMIN_ROLE) {
+    return (
+      <main className="route-state content-container" id="main-content">
+        <p className="eyebrow">访问受限</p>
+        <h1>这里需要管理员权限</h1>
+        <p>你的账号没有管理后台访问权限。系统仍会由后端再次校验权限。</p>
+        <Link className="primary-button inline-button" to="/">返回社区首页</Link>
+      </main>
+    )
+  }
+
+  return <Outlet />
+}
+
+function AdminShell({ currentUser, setCurrentUser }) {
+  const navigate = useNavigate()
+
+  function handleLogout() {
+    clearAuth()
+    setCurrentUser(null)
+    navigate('/login')
+  }
+
+  return (
+    <AdminLayout currentUser={currentUser} onLogout={handleLogout}>
+      <Outlet context={{ currentUser }} />
+    </AdminLayout>
+  )
+}
+
+function NotFound() {
+  return (
+    <main className="route-state content-container" id="main-content">
+      <p className="eyebrow">404</p>
+      <h1>这个页面没有找到</h1>
+      <p>链接可能已失效，或页面尚未开放。</p>
+      <Link className="primary-button inline-button" to="/">返回社区首页</Link>
+    </main>
   )
 }
 

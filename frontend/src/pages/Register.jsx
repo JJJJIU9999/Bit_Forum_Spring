@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Link, useNavigate } from 'react-router'
 import { registerUser } from '../api/userApi.js'
 import MessageBanner from '../components/MessageBanner.jsx'
 
-function Register({ onRegistered }) {
+function Register() {
+  const navigate = useNavigate()
   const [form, setForm] = useState({ username: '', password: '' })
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
@@ -20,10 +22,8 @@ function Register({ onRegistered }) {
 
     try {
       await registerUser(form)
-      setMessage('注册成功，请登录。')
-      setMessageType('info')
       setForm({ username: '', password: '' })
-      onRegistered()
+      navigate('/login', { replace: true })
     } catch (error) {
       setMessage(error.message)
       setMessageType('error')
@@ -35,7 +35,8 @@ function Register({ onRegistered }) {
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="form-heading">
-        <h2>用户注册</h2>
+        <p className="eyebrow">加入讨论</p>
+        <h1>创建你的账号</h1>
         <p>注册后即可加入社区，参与文章发布与互动。</p>
       </div>
 
@@ -46,6 +47,10 @@ function Register({ onRegistered }) {
           onChange={updateField}
           placeholder="3 到 30 个字符"
           type="text"
+          autoComplete="username"
+          minLength="3"
+          maxLength="30"
+          required
           value={form.username}
         />
       </label>
@@ -57,6 +62,10 @@ function Register({ onRegistered }) {
           onChange={updateField}
           placeholder="6 到 30 个字符"
           type="password"
+          autoComplete="new-password"
+          minLength="6"
+          maxLength="30"
+          required
           value={form.password}
         />
       </label>
@@ -66,6 +75,7 @@ function Register({ onRegistered }) {
       </button>
 
       <MessageBanner message={message} type={messageType} />
+      <p className="auth-switch">已有账号？<Link to="/login">去登录</Link></p>
     </form>
   )
 }

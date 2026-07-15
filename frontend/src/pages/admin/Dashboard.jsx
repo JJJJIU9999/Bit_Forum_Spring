@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
+import { useOutletContext } from 'react-router'
 import { checkAdminHealth, getAdminDashboardSummary } from '../../api/adminApi.js'
 import PageHeader from '../../components/PageHeader.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
 import MessageBanner from '../../components/MessageBanner.jsx'
 import { formatNumber } from './adminHelpers.js'
 
-function Dashboard({ currentUser }) {
+function Dashboard() {
+  const { currentUser } = useOutletContext()
   const [dashboardSummary, setDashboardSummary] = useState(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)

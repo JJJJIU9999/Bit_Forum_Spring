@@ -23,6 +23,7 @@ export function saveAuth(loginData) {
     JSON.stringify({
       userId: loginData.userId,
       username: loginData.username,
+      role: loginData.role,
     }),
   )
 }
@@ -36,7 +37,14 @@ export function clearAuth() {
 // 页面刷新后，用这个函数恢复当前用户展示状态。
 export function getCurrentUser() {
   const raw = localStorage.getItem(USER_KEY)
-  return raw ? JSON.parse(raw) : null
+  if (!raw) return null
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    clearAuth()
+    return null
+  }
 }
 
 // 请求拦截器：每次发请求前，如果本地有 token，就自动补 Authorization。

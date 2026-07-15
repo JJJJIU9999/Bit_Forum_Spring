@@ -1,12 +1,17 @@
-function PageHeader({ title, description, badge }) {
+function PageHeader({ title, description, badge, actions, level = 1 }) {
+  const Heading = level === 1 ? 'h1' : 'h2'
+
   return (
-    <div className="section-heading">
+    <header className="section-heading">
       <div>
-        <h2>{title}</h2>
+        <Heading>{title}</Heading>
         {description && <p>{description}</p>}
       </div>
-      {badge !== undefined && badge !== null && <span>{badge}</span>}
-    </div>
+      <div className="section-heading-actions">
+        {badge !== undefined && badge !== null && <span className="section-badge">{badge}</span>}
+        {actions}
+      </div>
+    </header>
   )
 }
 

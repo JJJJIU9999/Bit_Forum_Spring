@@ -2,7 +2,7 @@ function Pagination({ pageInfo, onPageChange, loading }) {
   const { current, pages } = pageInfo || {}
 
   return (
-    <div className="pager">
+    <nav className="pager" aria-label="分页导航">
       <button
         className="ghost-button"
         disabled={(current ?? 1) <= 1 || loading}
@@ -22,7 +22,7 @@ function Pagination({ pageInfo, onPageChange, loading }) {
       >
         下一页
       </button>
-    </div>
+    </nav>
   )
 }
 

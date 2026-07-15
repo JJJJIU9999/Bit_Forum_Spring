@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { checkAdminHealth, pageAdminReports, rejectReport, resolveReport } from '../../api/adminApi.js'
+import { pageAdminReports, rejectReport, resolveReport } from '../../api/adminApi.js'
 import PageHeader from '../../components/PageHeader.jsx'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Pagination from '../../components/Pagination.jsx'
@@ -8,7 +8,7 @@ import MessageBanner from '../../components/MessageBanner.jsx'
 import ConfirmDialog from '../../components/ConfirmDialog.jsx'
 import { REPORT_STATUS_LABELS, TARGET_TYPE_LABELS } from './adminHelpers.js'
 
-function ManageReports({ currentUser }) {
+function ManageReports() {
   const [records, setRecords] = useState([])
   const [pageInfo, setPageInfo] = useState({ current: 1, pages: 1, total: 0 })
   const [pageNum, setPageNum] = useState(1)
@@ -20,11 +20,9 @@ function ManageReports({ currentUser }) {
 
   useEffect(() => {
     async function load() {
-      if (!currentUser) return
       setLoading(true)
       setMessage('')
       try {
-        await checkAdminHealth()
         const result = await pageAdminReports({ status: reportStatus, pageNum, pageSize: 6 })
         setRecords(result.data.records || [])
         setPageInfo({ current: result.data.current, pages: result.data.pages, total: result.data.total })
@@ -36,7 +34,7 @@ function ManageReports({ currentUser }) {
       }
     }
     load()
-  }, [currentUser, pageNum, refreshKey, reportStatus])
+  }, [pageNum, refreshKey, reportStatus])
 
   function doAction(action, okMsg) {
     setLoading(true)

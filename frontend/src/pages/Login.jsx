@@ -1,9 +1,13 @@
 import { useState } from 'react'
+import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router'
 import { loginUser } from '../api/userApi.js'
 import { getCurrentUser, saveAuth } from '../api/request.js'
 import MessageBanner from '../components/MessageBanner.jsx'
 
-function Login({ onLogin }) {
+function Login() {
+  const { setCurrentUser } = useOutletContext()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [form, setForm] = useState({ username: '', password: '' })
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
@@ -22,9 +26,10 @@ function Login({ onLogin }) {
     try {
       const result = await loginUser(form)
       saveAuth(result.data)
-      onLogin(getCurrentUser())
-      setMessage('登录成功，欢迎回来。')
-      setMessageType('info')
+      setCurrentUser(getCurrentUser())
+      const redirectTo = searchParams.get('redirectTo')
+      const destination = redirectTo?.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/'
+      navigate(destination, { replace: true })
     } catch (error) {
       setMessage(error.message)
       setMessageType('error')
@@ -36,7 +41,8 @@ function Login({ onLogin }) {
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="form-heading">
-        <h2>用户登录</h2>
+        <p className="eyebrow">欢迎回来</p>
+        <h1>登录 Bit Forum</h1>
         <p>登录后即可发布文章、点赞、收藏和评论。</p>
       </div>
 
@@ -47,6 +53,8 @@ function Login({ onLogin }) {
           onChange={updateField}
           placeholder="请输入用户名"
           type="text"
+          autoComplete="username"
+          required
           value={form.username}
         />
       </label>
@@ -58,6 +66,8 @@ function Login({ onLogin }) {
           onChange={updateField}
           placeholder="请输入密码"
           type="password"
+          autoComplete="current-password"
+          required
           value={form.password}
         />
       </label>
@@ -67,6 +77,7 @@ function Login({ onLogin }) {
       </button>
 
       <MessageBanner message={message} type={messageType} />
+      <p className="auth-switch">还没有账号？<Link to="/register">创建账号</Link></p>
     </form>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { approveArticle, checkAdminHealth, pageAuditArticles, rejectArticle } from '../../api/adminApi.js'
+import { approveArticle, pageAuditArticles, rejectArticle } from '../../api/adminApi.js'
 import PageHeader from '../../components/PageHeader.jsx'
 import Pagination from '../../components/Pagination.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
@@ -7,7 +7,7 @@ import MessageBanner from '../../components/MessageBanner.jsx'
 import ConfirmDialog from '../../components/ConfirmDialog.jsx'
 import { formatDate } from './adminHelpers.js'
 
-function AuditArticles({ currentUser }) {
+function AuditArticles() {
   const [records, setRecords] = useState([])
   const [pageInfo, setPageInfo] = useState({ current: 1, pages: 1, total: 0 })
   const [pageNum, setPageNum] = useState(1)
@@ -18,11 +18,9 @@ function AuditArticles({ currentUser }) {
 
   useEffect(() => {
     async function load() {
-      if (!currentUser) return
       setLoading(true)
       setMessage('')
       try {
-        await checkAdminHealth()
         const result = await pageAuditArticles({ status: 'PENDING', pageNum, pageSize: 6 })
         setRecords(result.data.records || [])
         setPageInfo({ current: result.data.current, pages: result.data.pages, total: result.data.total })
@@ -34,7 +32,7 @@ function AuditArticles({ currentUser }) {
       }
     }
     load()
-  }, [currentUser, pageNum, refreshKey])
+  }, [pageNum, refreshKey])
 
   function doApprove(id) {
     setLoading(true)
