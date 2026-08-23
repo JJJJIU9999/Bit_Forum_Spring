@@ -20,8 +20,8 @@
 | 认证 | JWT + BCrypt |
 | 参数校验 | Jakarta Validation |
 | 测试 | JUnit 5 + Spring Boot Test + Mockito |
-| 部署 | Docker + Docker Compose |
-| 前端演示 | React + Vite + Axios |
+| 部署 | Docker + Docker Compose + Nginx |
+| 前端 | React 19 + Vite 7 + React Router 7 + Axios |
 
 ## 核心功能
 
@@ -37,7 +37,26 @@
 - Redis 热门排行：使用 ZSet 按热度分数维护热门文章。
 - RabbitMQ 异步通知：管理员审核通过文章后发送结构化消息 `ArticlePublishMessage`。
 - RabbitMQ 可靠性：生产者 Confirm/Returns、消费者手动 ACK、Redis 幂等、DLX/DLQ 失败兜底。
-- Docker Compose：一键启动 MySQL、Redis、RabbitMQ 和后端服务。
+- Docker Compose：一键启动 MySQL、Redis、RabbitMQ、Spring Boot 和 React/Nginx 五个服务。
+
+## 毕业设计扩展模块
+
+| 模块 | 已实现能力 |
+| --- | --- |
+| M1 板块分类 | 板块管理、发文板块校验、列表筛选 |
+| M2 文章审核 | 草稿、待审、发布、驳回、下架状态流转与审核记录 |
+| M3 收藏与搜索 | 文章收藏、取消收藏、我的收藏、标题/正文搜索 |
+| M4 通知中心 | 评论、点赞、收藏和审核通知，未读统计与已读操作 |
+| M5 举报治理 | 文章/评论举报、用户查询、管理员处理与并发去重 |
+| M6 数据看板 | 用户、内容、举报、通知、板块与 Redis 热榜统计 |
+| M7 用户资料 | 头像、昵称、简介、公开主页和已发布文章 |
+| M8 OpenAPI | Swagger UI、OpenAPI JSON 与 JWT 安全声明 |
+| M9 关注关系 | 关注/取关、粉丝与关注列表、关系统计 |
+| M10 文件上传 | 头像与文章封面上传、类型/大小/路径校验 |
+| M11 指标同步 | Redis 浏览量和点赞数定时同步到 MySQL |
+| M12 健康检查 | Actuator 与管理员 MySQL/Redis/RabbitMQ 聚合检查 |
+
+数据库结构由 `src/main/resources/db/migration` 下的 Flyway V1-V11 管理。
 
 ## 项目结构
 
@@ -63,22 +82,23 @@ src/main/java/com/bitforum/
 前置要求：
 
 - Docker Desktop 已启动。
-- 本机 `8080`、`3306`、`6379`、`5672`、`15672` 端口没有被占用。
+- 本机 `80`、`8080`、`3307`、`6379`、`5672`、`15672` 端口没有被占用。
 
 启动命令：
 
 ```powershell
 cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring
-docker compose up --build
+docker compose up --build -d
 ```
 
 启动后访问：
 
 | 服务 | 地址 |
 | --- | --- |
+| React/Nginx 前端 | `http://localhost` |
 | 后端接口 | `http://localhost:8080` |
 | RabbitMQ 管理台 | `http://localhost:15672` |
-| MySQL 宿主机端口 | `localhost:3306` |
+| MySQL 宿主机端口 | `localhost:3307` |
 | Redis 宿主机端口 | `localhost:6379` |
 
 RabbitMQ 管理台账号密码从本地 `.env` 读取：
@@ -90,9 +110,19 @@ RabbitMQ 管理台账号密码从本地 `.env` 读取：
 说明：
 
 - Compose 内部后端服务通过 `mysql:3306` 访问 MySQL。
-- 宿主机访问 Compose 里的 MySQL 使用 `localhost:3306`。
+- 宿主机访问 Compose 里的 MySQL 使用 `localhost:3307`。
+- React 生产文件由 Node 22 构建后交给 Nginx 托管；`/api` 和 `/uploads` 由 Nginx 转发到后端。
+- 后端上传目录通过 `uploads-data` 命名卷持久化，普通重建不会删除已有头像和封面。
 - 运行 Docker Compose 前，先参考 `.env.example` 创建本地 `.env`，不要提交真实 `.env`。
-- Flyway 会根据 `src/main/resources/db/migration` 下的脚本初始化数据库结构。
+- Flyway 会按 V1-V11 初始化或校验数据库结构。
+
+普通停止：
+
+```powershell
+docker compose down
+```
+
+不要把 `docker compose down -v` 当作普通停止命令：`-v` 会同时删除 MySQL 和上传数据卷。
 
 ### 方式二：本地 Maven 启动后端
 
@@ -115,7 +145,7 @@ mvn spring-boot:run
 mvn test
 ```
 
-### 方式三：启动 React 前端演示页
+### 方式三：本地开发模式启动 React 前端
 
 前置要求：
 
@@ -126,7 +156,7 @@ mvn test
 
 ```powershell
 cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring\frontend
-npm install
+npm ci
 ```
 
 启动前端开发服务器：
@@ -142,7 +172,7 @@ npm run dev
 http://localhost:5173
 ```
 
-前端演示页覆盖登录注册、文章列表/详情/投稿审核、我的文章、点赞、评论、热门文章和管理员页面。
+前端覆盖登录注册、文章列表/详情/投稿审核、个人中心、通知、关注、点赞、收藏、评论、举报，以及管理员看板和治理页面。
 
 详细启动顺序、演示账号和浏览器验证流程见：
 
@@ -392,7 +422,7 @@ ArticleService.approve
 
 建议 5 分钟演示顺序：
 
-1. 运行 `docker compose up --build`，说明 MySQL、Redis、RabbitMQ、后端服务由 Compose 编排。
+1. 运行 `docker compose up --build -d`，说明 React/Nginx、Spring Boot、MySQL、Redis、RabbitMQ 五个服务由 Compose 编排。
 2. 注册用户，强调注册响应不返回密码哈希。
 3. 登录拿到 JWT，说明写接口通过拦截器校验登录态。
 4. 提交文章审核，管理员审核通过后观察数据库状态变化和 RabbitMQ 消费者日志。
@@ -410,14 +440,17 @@ ArticleService.approve
 # 查看 Compose 解析后的最终配置
 docker compose config
 
-# 启动并重新构建后端镜像
-docker compose up --build
+# 启动并重新构建五个服务
+docker compose up --build -d
 
 # 查看容器状态
 docker compose ps
 
 # 单独查看后端日志
 docker compose logs -f app
+
+# 普通停止并保留数据卷
+docker compose down
 
 # 运行自动化测试
 mvn test
@@ -427,4 +460,4 @@ mvn test
 
 面试中可以这样概括：
 
-> 我做了一个 Spring Boot 论坛项目，从 JDBC 版升级到 Spring Boot 版，实现了用户登录、文章草稿与审核发布、评论、Redis 点赞和浏览量、Redis ZSet 热门排行、RabbitMQ 异步通知以及 Docker Compose 部署。后续我重点补强了安全、数据一致性、接口规范、自动化测试和消息可靠性，比如注册接口不返回密码哈希、JWT 密钥外置、公开查询只展示已发布文章、RabbitMQ 使用 Confirm/Returns、手动 ACK、幂等消费和 DLQ 处理失败消息。
+> 我做了一个 Spring Boot + React 社区论坛，实现了注册登录、JWT 权限、板块、文章草稿与审核状态机、评论、点赞、收藏、通知、举报治理、用户主页与关注、文件上传、Redis 热榜和指标同步，以及管理员看板和健康检查。工程上使用 Flyway V1-V11 管理数据库，RabbitMQ 实现 Confirm/Returns、手动 ACK、幂等与 DLQ 基础机制，并通过 Docker Compose 编排 React/Nginx、Spring Boot、MySQL、Redis、RabbitMQ 五个服务。

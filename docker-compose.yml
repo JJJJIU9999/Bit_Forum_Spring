@@ -6,8 +6,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-bit_forum}
     ports:
-      # 左边 3306 是宿主机端口，右边 3306 是容器内 MySQL 端口
-      - "3306:3306"
+      # 左边 3307 是宿主机端口，右边 3306 是容器内 MySQL 端口
+      - "3307:3306"
     volumes:
       - mysql-data:/var/lib/mysql
 
@@ -50,6 +50,17 @@ services:
       SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-604800000}
+    volumes:
+      - uploads-data:/app/uploads
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - app
 
 volumes:
   mysql-data:
+  uploads-data:
