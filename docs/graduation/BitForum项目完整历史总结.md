@@ -1,13 +1,13 @@
 # Bit Forum 项目完整历史总结
 
-## 2026-08-24 求职展示整改前基线收口更新
+## 2026-08-24 公开仓库整改前基线收口更新
 
 - Docker/Nginx、五服务 Compose、上传卷和 README 已由本地提交 `0c89922 feat(deploy): add Nginx frontend to Docker Compose` 收口。
 - 文章详情间距修复已由本地提交 `d9d4f48 fix(frontend): correct article detail spacing` 单独收口。
 - 本轮重新验证：Maven 176 个测试全部通过；Vitest 3 个文件、4 个测试全部通过；Vite 生产构建和 `docker compose config --quiet` 通过；可执行 JAR 能启动并在 8080 返回 Actuator 健康响应。
 - RabbitMQ 5672 在本轮未启动，因此应用健康聚合状态为 `DOWN` 且测试有 AMQP 重连日志，但测试结果为 0 failure、0 error。
 - Docker daemon 本轮未运行，五容器、首页、深层路由和代理的实时 E2E 未重新执行；2026-07-20 的历史记录仍保留在 `docs/graduation/docker-frontend/`。
-- 两份 `docs/learning/` 个人学习文档明确不进入基线提交；当前提交尚未推送，push 需单独确认。
+- 个人学习资料不再作为项目主文档保留在当前公开树；历史内容仍可通过 Git 提交记录恢复。
 
 下文保留 2026-08-02 核查快照，便于追溯当时的代码与工作区状态。其中“Docker 前端化尚未提交”“当前下一步先提交 Docker”等说法已被本节覆盖，不再代表 2026-08-24 的当前状态。
 
@@ -18,9 +18,9 @@
 
 ## 1. 项目定位
 
-Bit Forum 是林坚浩持续维护的毕业设计和 Java 后端求职项目，定位为一个后端能力较完整、带 React 管理与用户端界面的社区交流平台。项目最早聚焦注册登录、文章、评论、Redis 热榜和 RabbitMQ 演示，随后按 M1-M12 扩展为包含内容生产、审核发布、互动通知、举报治理、用户关系、运营后台、文件上传、接口文档、指标落库和健康检查的完整论坛系统。
+Bit Forum 是林坚浩持续维护的个人毕业设计项目，定位为一个后端能力较完整、带 React 管理与用户端界面的社区交流平台。项目最早聚焦注册登录、文章、评论、Redis 热榜和 RabbitMQ 事件，随后按 M1-M12 扩展为包含内容生产、审核发布、互动通知、举报治理、用户关系、运营后台、文件上传、接口文档、指标落库和健康检查的完整论坛系统。
 
-项目适合用于展示以下 Java 后端能力：
+项目覆盖以下 Java 后端工程能力：
 
 - Spring Boot 分层开发、统一响应和全局异常处理。
 - MyBatis-Plus 数据访问、分页和事务边界。
@@ -62,12 +62,7 @@ Bit Forum 是林坚浩持续维护的毕业设计和 Java 后端求职项目，�
 - 文章详情页标题、正文内边距的少量 CSS 修正。
 - 本次项目总结文档和 Docker 实施记录。
 
-工作区还有两份未跟踪学习文档：
-
-- `docs/learning/认证与权限链路学习进度.md`
-- `docs/learning/项目链路总览.md`
-
-这些学习文档是用户已有内容，后续 Git 操作不能用 `git add .` 无差别暂存，应按明确路径选择提交范围。
+个人学习文档不属于项目交付范围，当前公开树只保留毕业设计、部署和工程说明。
 
 ## 3. 技术栈与版本
 
@@ -479,7 +474,7 @@ docker compose up --build -d app
 - 修复管理表格操作列边框布局。
 - 修复前端无 URL 路由、移动端布局不足、管理员入口角色识别、弹窗可访问性和文章卡片重复内容等问题。
 
-因此，GPT 后续不应再把“全面检查”和“前端整体重构”记为尚未开始的首要任务。
+因此，后续维护不应再把“全面检查”和“前端整体重构”当作尚未开始的首要任务。
 
 ## 12. 当前已知风险与未实现项
 
@@ -517,7 +512,7 @@ docker compose up --build -d app
 3. 对 360/375/768/1024/1440px 进行浏览器人工回归，覆盖游客、普通用户、管理员三种身份和深层路由刷新。
 4. 优先修复 RabbitMQ 幂等/补偿与 HTTP 状态语义，再处理上传魔数校验和限流。
 5. 增加少量高价值前端集成/E2E 测试，而不是机械堆叠组件单测。
-6. 收口毕业设计答辩材料、架构图、数据库关系图、部署说明和面试表达。
+6. 收口毕业设计答辩材料、架构图、数据库关系图和部署说明。
 
 ## 14. 项目描述时的真实性规则
 
@@ -537,6 +532,6 @@ docker compose up --build -d app
 
 ## 15. 项目真实性摘要
 
-下面这段适合直接作为新的长期记忆核心摘要：
+下面保留一段当时的历史状态摘要：
 
-> Bit Forum 是林坚浩持续维护的毕业设计和 Java 后端求职项目。截至 2026-08-02，项目使用 Java 17、Spring Boot 3.4.5、MyBatis-Plus 3.5.9、MySQL 8、Flyway、Redis 7、RabbitMQ 3、JWT/BCrypt、OpenAPI、Actuator，以及 React 19 + Vite 7 + React Router 7 + Axios 前端。后端已完成注册登录、普通/管理员权限、板块分类、文章草稿-待审-发布-驳回-下架状态机、评论、点赞与热榜、收藏与搜索、通知中心、举报治理、管理员运营看板、用户资料、公开主页、关注关系、头像/封面上传、Redis 指标定时落库、Swagger/OpenAPI 和管理员聚合健康检查。数据库由 Flyway V1-V11 管理，共 9 个主要实体表。前端已从演示页重构为有正式 URL 路由、公共站点布局、个人中心、通知中心和独立管理后台的暖色响应式社区界面，并补充基础可访问性。当前分支为 `feat/frontend-refactor`，HEAD `bfbfcce` 已推送远端；M1-M12 和前端整体重构已提交。React 的 Node 22 + Nginx Docker 镜像、Compose 前端服务、上传卷和一处文章详情 CSS 修正已在工作区实现并验证，但截至该日期尚未提交。2026-08-02 实时验证结果为 Maven 176 个测试全部通过、Vitest 4 个测试通过、Vite 生产构建通过、Compose 配置校验通过。当前高优先级不是再次从头做前端重构，而是收口 Docker/README/人工回归，并处理 RabbitMQ 幂等与补偿、HTTP 错误状态、上传真实内容校验、限流、测试隔离和前端测试覆盖。描述项目时必须区分已实现与待办；不得宣称 exactly-once、绝对不丢消息、生产流量、Elasticsearch、WebSocket、Spring AI、TailwindCSS、微服务、Kubernetes、对象存储或完整 CI/CD。
+> Bit Forum 是林坚浩持续维护的个人毕业设计项目。截至 2026-08-02，项目使用 Java 17、Spring Boot 3.4.5、MyBatis-Plus 3.5.9、MySQL 8、Flyway、Redis 7、RabbitMQ 3、JWT/BCrypt、OpenAPI、Actuator，以及 React 19 + Vite 7 + React Router 7 + Axios 前端。后端已完成注册登录、普通/管理员权限、板块分类、文章草稿-待审-发布-驳回-下架状态机、评论、点赞与热榜、收藏与搜索、通知中心、举报治理、管理员运营看板、用户资料、公开主页、关注关系、头像/封面上传、Redis 指标定时落库、Swagger/OpenAPI 和管理员聚合健康检查。数据库由 Flyway V1-V11 管理，共 9 个主要实体表。前端已从演示页重构为有正式 URL 路由、公共站点布局、个人中心、通知中心和独立管理后台的暖色响应式社区界面，并补充基础可访问性。当前分支为 `feat/frontend-refactor`，HEAD `bfbfcce` 已推送远端；M1-M12 和前端整体重构已提交。React 的 Node 22 + Nginx Docker 镜像、Compose 前端服务、上传卷和一处文章详情 CSS 修正已在工作区实现并验证，但截至该日期尚未提交。2026-08-02 实时验证结果为 Maven 176 个测试全部通过、Vitest 4 个测试通过、Vite 生产构建通过、Compose 配置校验通过。当前高优先级不是再次从头做前端重构，而是收口 Docker/README/人工回归，并处理 RabbitMQ 幂等与补偿、HTTP 错误状态、上传真实内容校验、限流、测试隔离和前端测试覆盖。描述项目时必须区分已实现与待办；不得宣称 exactly-once、绝对不丢消息、生产流量、Elasticsearch、WebSocket、Spring AI、TailwindCSS、微服务、Kubernetes、对象存储或完整 CI/CD。
