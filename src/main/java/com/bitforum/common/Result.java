@@ -16,8 +16,12 @@ public class Result<T> {
 
     //失败时调用
     public static <T> Result<T> fail(String message) {
+        return fail(400, message);
+    }
+
+    public static <T> Result<T> fail(int code, String message) {
         Result<T> r = new Result<>();
-        r.code = 400;
+        r.code = code;
         r.message = message;
         r.data = null;
         return r;

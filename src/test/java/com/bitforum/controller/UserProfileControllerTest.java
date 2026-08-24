@@ -176,8 +176,8 @@ class UserProfileControllerTest {
         when(userService.findById(81005L)).thenReturn(null);
 
         mockMvc.perform(get("/api/users/81005/articles"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value("用户不存在"));
     }
 

@@ -71,7 +71,7 @@ class UserFollowControllerTest {
 
         mockMvc.perform(post("/api/users/1/follow")
                 .header("Authorization", "Bearer user-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("不能关注自己"));
     }

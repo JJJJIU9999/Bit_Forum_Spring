@@ -81,7 +81,7 @@ class AdminUserControllerTest {
         mockMvc.perform(put("/api/admin/user/disable")
                 .param("userId", "30")
                 .header("Authorization", "Bearer admin-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("不能禁用当前管理员自己"));
     }

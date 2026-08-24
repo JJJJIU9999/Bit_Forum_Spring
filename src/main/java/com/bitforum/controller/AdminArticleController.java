@@ -98,7 +98,7 @@ public class AdminArticleController {
     public Result<String> deleteArticle(@RequestParam Long articleId) {
         boolean deleted = articleService.deleteByAdmin(articleId);
         if (!deleted) {
-            return Result.fail("文章不存在");
+            return Result.fail(404, "文章不存在");
         }
         return Result.ok("管理员删除文章成功", null);
     }

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.amqp.core.Message;
 
 import com.bitforum.config.RabbitMQConfig;
+import com.bitforum.entity.Article;
 import com.bitforum.message.ArticlePublishMessage;
 import com.rabbitmq.client.Channel;
 
@@ -19,6 +20,8 @@ public class NotificationListener {
 
     @Autowired
     private RedisService redisService;
+    @Autowired
+    private NotificationService notificationService;
 
     // 监听文章发布队列。RabbitTemplate 发送 JSON 后，这里会自动反序列化成 ArticlePublishMessage。
     @RabbitListener(queues = RabbitMQConfig.ARTICLE_PUBLISH_QUEUE)
@@ -26,11 +29,8 @@ public class NotificationListener {
         long deliveryTag = rawMessage.getMessageProperties().getDeliveryTag();
 
         try {
-            // 消费者先用 messageId 做幂等判断，避免 RabbitMQ 重投递时重复执行通知、积分等业务。
-            boolean firstProcess = redisService.markMessageProcessed(message.getMessageId());
-            if (!firstProcess) {
+            if (redisService.isMessageProcessed(message.getMessageId())) {
                 log.info("文章发布消息已经过处理，跳过重复消费：messageId={}", message.getMessageId());
-                // 重复消息已经没有继续处理的必要，直接 ack，告诉 RabbitMQ 不要再投递这条消息。
                 channel.basicAck(deliveryTag, false);
                 return;
             }
@@ -41,23 +41,21 @@ public class NotificationListener {
                     message.getUserId(),
                     message.getTitle());
 
-            // 处理更新积分，发通知等耗时操作
-            // 异步任务：发布后的慢活扔给线程池（不阻塞用户）
-            Thread.sleep(2000); // 模拟耗时操作
-
-            log.info("文章发布完成，主线程已返回（异步任务还在后台跑）");
-            // 业务成功后手动 ack，明确告诉 RabbitMQ：这条消息已经处理完成。
+            processPublish(message);
+            redisService.markMessageProcessed(message.getMessageId());
             channel.basicAck(deliveryTag, false);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("文章发布消息处理失败：messageId={}", message.getMessageId(), e);
-            // 业务失败时 nack；requeue=false 表示不重新入队，避免失败消息无限重试。
-            channel.basicNack(deliveryTag, false, false);
         } catch (Exception e) {
             log.error("文章发布消息处理失败：messageId={}", message.getMessageId(), e);
-            // 兜底处理非中断异常，例如 Redis 判断、通知逻辑等步骤出现异常。
             channel.basicNack(deliveryTag, false, false);
         }
+    }
+
+    void processPublish(ArticlePublishMessage message) {
+        Article article = new Article();
+        article.setId(message.getArticleId());
+        article.setUserId(message.getUserId());
+        article.setTitle(message.getTitle());
+        notificationService.notifyAuditApproved(article, message.getAuditorId(), message.getMessageId());
     }
 
     // 监听死信队列。这里先只记录失败消息，后续可以扩展为人工补偿、告警或重新投递。

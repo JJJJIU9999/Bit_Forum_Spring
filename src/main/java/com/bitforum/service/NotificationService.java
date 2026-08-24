@@ -1,6 +1,7 @@
 package com.bitforum.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,6 +66,7 @@ public class NotificationService {
                 senderId,
                 TYPE_COMMENT,
                 "收到新评论",
+                null,
                 "用户 " + senderId + " 评论了你的文章《" + safeTitle(article) + "》：" + truncate(commentContent, 180));
     }
 
@@ -75,6 +77,7 @@ public class NotificationService {
                 senderId,
                 TYPE_LIKE,
                 "收到新点赞",
+                null,
                 "用户 " + senderId + " 点赞了你的文章《" + safeTitle(article) + "》。");
     }
 
@@ -85,17 +88,23 @@ public class NotificationService {
                 senderId,
                 TYPE_FAVORITE,
                 "收到新收藏",
+                null,
                 "用户 " + senderId + " 收藏了你的文章《" + safeTitle(article) + "》。");
     }
 
     @Transactional
-    public void notifyAuditApproved(Article article, Long auditorId) {
-        createArticleNotification(
-                article,
-                auditorId,
-                TYPE_AUDIT_APPROVED,
-                "文章审核通过",
-                "你的文章《" + safeTitle(article) + "》已审核通过并发布。");
+    public void notifyAuditApproved(Article article, Long auditorId, String sourceMessageId) {
+        try {
+            createArticleNotification(
+                    article,
+                    auditorId,
+                    TYPE_AUDIT_APPROVED,
+                    "文章审核通过",
+                    sourceMessageId,
+                    "你的文章《" + safeTitle(article) + "》已审核通过并发布。");
+        } catch (DuplicateKeyException e) {
+            // 同一个 MQ messageId 已经落过通知时，重放视为幂等成功。
+        }
     }
 
     @Transactional
@@ -105,6 +114,7 @@ public class NotificationService {
                 auditorId,
                 TYPE_AUDIT_REJECTED,
                 "文章审核未通过",
+                null,
                 "你的文章《" + safeTitle(article) + "》审核未通过，原因：" + truncate(reason, 220));
     }
 
@@ -115,10 +125,17 @@ public class NotificationService {
                 auditorId,
                 TYPE_ARTICLE_OFFLINE,
                 "文章已下架",
+                null,
                 "你的文章《" + safeTitle(article) + "》已被下架，原因：" + truncate(reason, 220));
     }
 
-    private void createArticleNotification(Article article, Long senderId, String type, String title, String content) {
+    private void createArticleNotification(
+            Article article,
+            Long senderId,
+            String type,
+            String title,
+            String sourceMessageId,
+            String content) {
         if (article == null || article.getUserId() == null) {
             return;
         }
@@ -133,6 +150,7 @@ public class NotificationService {
         notification.setTitle(title);
         notification.setContent(truncate(content, 500));
         notification.setArticleId(article.getId());
+        notification.setSourceMessageId(sourceMessageId);
         notification.setReadStatus(READ_STATUS_UNREAD);
         notificationMapper.insert(notification);
     }

@@ -5,8 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import javax.imageio.ImageIO;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -71,7 +75,8 @@ class FileUploadServiceTest {
     @Test
     void validAvatarShouldBeSavedWithGeneratedName() throws Exception {
         FileUploadService service = new FileUploadService(tempDir.toString());
-        MockMultipartFile file = new MockMultipartFile("file", "..\\avatar.png", "image/png", "png".getBytes());
+        byte[] content = imageBytes("png");
+        MockMultipartFile file = new MockMultipartFile("file", "..\\avatar.png", "image/png", content);
 
         FileUploadResponse response = service.uploadAvatar(file);
 
@@ -79,7 +84,7 @@ class FileUploadServiceTest {
         assertTrue(response.getUrl().endsWith(".png"));
         assertEquals("avatar.png", response.getOriginalFilename());
         assertEquals("image/png", response.getContentType());
-        assertEquals(3, response.getSize());
+        assertEquals(content.length, response.getSize());
         assertFalse(response.getUrl().contains("avatar.png"));
 
         String filename = response.getUrl().substring(response.getUrl().lastIndexOf('/') + 1);
@@ -89,7 +94,7 @@ class FileUploadServiceTest {
     @Test
     void validArticleCoverShouldReturnCoverUrl() throws Exception {
         FileUploadService service = new FileUploadService(tempDir.toString());
-        MockMultipartFile file = new MockMultipartFile("file", "cover.jpeg", "image/jpeg", "jpg".getBytes());
+        MockMultipartFile file = new MockMultipartFile("file", "cover.jpeg", "image/jpeg", imageBytes("jpg"));
 
         FileUploadResponse response = service.uploadArticleCover(file);
 
@@ -98,5 +103,45 @@ class FileUploadServiceTest {
 
         String filename = response.getUrl().substring(response.getUrl().lastIndexOf('/') + 1);
         assertTrue(Files.exists(tempDir.resolve("article-cover").resolve(filename)));
+    }
+
+    @Test
+    void fakePngContentShouldBeRejected() {
+        FileUploadService service = new FileUploadService(tempDir.toString());
+        MockMultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", "not-a-png".getBytes());
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> service.uploadAvatar(file));
+
+        assertEquals("图片内容与文件类型不匹配", exception.getMessage());
+        assertFalse(Files.exists(tempDir.resolve("avatar")));
+    }
+
+    @Test
+    void mismatchedExtensionAndContentTypeShouldBeRejected() throws Exception {
+        FileUploadService service = new FileUploadService(tempDir.toString());
+        MockMultipartFile file = new MockMultipartFile("file", "avatar.jpg", "image/png", imageBytes("png"));
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> service.uploadAvatar(file));
+
+        assertEquals("文件扩展名与图片类型不匹配", exception.getMessage());
+    }
+
+    @Test
+    void truncatedWebpHeaderShouldBeRejected() {
+        FileUploadService service = new FileUploadService(tempDir.toString());
+        byte[] content = {'R', 'I', 'F', 'F', 4, 0, 0, 0, 'W', 'E', 'B', 'P'};
+        MockMultipartFile file = new MockMultipartFile("file", "avatar.webp", "image/webp", content);
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> service.uploadAvatar(file));
+
+        assertEquals("图片内容与文件类型不匹配", exception.getMessage());
+    }
+
+    private byte[] imageBytes(String format) throws Exception {
+        BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            assertTrue(ImageIO.write(image, format, output));
+            return output.toByteArray();
+        }
     }
 }

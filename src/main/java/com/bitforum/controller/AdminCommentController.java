@@ -40,7 +40,7 @@ public class AdminCommentController {
         // 管理员可以删除任意评论；Service 用 boolean 区分“已删除”和“评论不存在”。
         boolean deleted = commentService.deleteByAdmin(commentId);
         if (!deleted) {
-            return Result.fail("评论不存在");
+            return Result.fail(404, "评论不存在");
         }
         return Result.ok("管理员删除评论成功", null);
     }

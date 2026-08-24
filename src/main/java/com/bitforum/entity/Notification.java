@@ -19,6 +19,7 @@ public class Notification {
     private String title;
     private String content;
     private Long articleId;
+    private String sourceMessageId;
     private Integer readStatus;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

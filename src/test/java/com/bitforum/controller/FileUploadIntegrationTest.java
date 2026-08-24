@@ -50,7 +50,7 @@ class FileUploadIntegrationTest {
         mockMvc.perform(multipart("/api/upload/avatar")
                 .file(file)
                 .header("Authorization", "Bearer user-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("上传文件大小超过限制"));
     }

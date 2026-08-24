@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.entity.Article;
 import com.bitforum.entity.Notification;
 import com.bitforum.mapper.NotificationMapper;
 
@@ -79,6 +80,22 @@ class NotificationServiceTest {
         assertEquals(NotificationService.READ_STATUS_READ, notificationMapper.selectById(ownFirst.getId()).getReadStatus());
         assertEquals(NotificationService.READ_STATUS_READ, notificationMapper.selectById(ownSecond.getId()).getReadStatus());
         assertEquals(NotificationService.READ_STATUS_UNREAD, notificationMapper.selectById(other.getId()).getReadStatus());
+    }
+
+    @Test
+    void auditApprovedNotificationShouldBeIdempotentBySourceMessage() {
+        Article article = new Article();
+        article.setId(100L);
+        article.setUserId(51009L);
+        article.setTitle("幂等通知测试");
+
+        notificationService.notifyAuditApproved(article, 52011L, "message-100");
+        notificationService.notifyAuditApproved(article, 52011L, "message-100");
+
+        List<Notification> notifications = notificationMapper.selectList(new QueryWrapper<Notification>()
+                .eq("source_message_id", "message-100"));
+        assertEquals(1, notifications.size());
+        assertEquals(NotificationService.TYPE_AUDIT_APPROVED, notifications.get(0).getType());
     }
 
     private Notification insertNotification(Long receiverId, Long senderId, String type, Long articleId) {

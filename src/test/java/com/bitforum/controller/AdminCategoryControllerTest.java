@@ -109,7 +109,7 @@ class AdminCategoryControllerTest {
         mockMvc.perform(delete("/api/admin/category/delete")
                 .header("Authorization", "Bearer admin-token")
                 .param("categoryId", "1"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("板块下已有文章，不能删除"));
     }

@@ -69,8 +69,8 @@ class AdminCommentControllerTest {
         mockMvc.perform(delete("/api/admin/comment/delete")
                 .param("commentId", "404")
                 .header("Authorization", "Bearer admin-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value("评论不存在"));
     }
 

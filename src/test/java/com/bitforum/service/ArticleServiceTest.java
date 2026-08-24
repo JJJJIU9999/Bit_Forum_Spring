@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -19,8 +20,12 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -50,7 +55,7 @@ public class ArticleServiceTest {
     private ArticleMapper articleMapper;
     @Autowired
     private ArticleAuditRecordMapper articleAuditRecordMapper;
-    @Autowired
+    @MockitoSpyBean
     private ArticleFavoriteMapper articleFavoriteMapper;
     @Autowired
     private CategoryMapper categoryMapper;
@@ -175,6 +180,7 @@ public class ArticleServiceTest {
         ArticlePublishMessage message = messageCaptor.getValue();
         assertEquals(article.getId(), message.getArticleId());
         assertEquals(userId, message.getUserId());
+        assertEquals(adminId, message.getAuditorId());
         assertEquals(title, message.getTitle());
         assertNotNull(message.getMessageId());
         assertNotNull(message.getPublishTime());
@@ -307,16 +313,32 @@ public class ArticleServiceTest {
 
         articleService.favoriteArticle(22003L, article.getId());
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
             articleService.favoriteArticle(22003L, article.getId());
         });
 
-        assertEquals("不能重复收藏同一篇文章", exception.getMessage());
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("不能重复收藏同一篇文章", exception.getReason());
         assertEquals(1L, countNotifications(article.getId(), NotificationService.TYPE_FAVORITE));
     }
 
     @Test
-    void approveShouldCreateAuditApprovedNotification() {
+    void concurrentDuplicateFavoriteShouldReturnConflictWithoutNotification() {
+        Article article = createArticle("并发重复收藏-" + UUID.randomUUID(), "唯一约束冲突应统一返回 409", 11006L,
+                defaultCategoryId(), ArticleService.STATUS_PUBLISHED);
+        doThrow(new DuplicateKeyException("duplicate favorite"))
+                .when(articleFavoriteMapper).insert(any(ArticleFavorite.class));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> articleService.favoriteArticle(22006L, article.getId()));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("不能重复收藏同一篇文章", exception.getReason());
+        assertEquals(0L, countNotifications(article.getId(), NotificationService.TYPE_FAVORITE));
+    }
+
+    @Test
+    void approveNotificationShouldBeHandledByMqConsumer() {
         Long authorId = 33001L;
         Long adminId = 93001L;
         String title = "M4-approve-" + UUID.randomUUID();
@@ -325,10 +347,7 @@ public class ArticleServiceTest {
 
         articleService.approve(article.getId(), adminId);
 
-        Notification notification = findNotification(article.getId(), NotificationService.TYPE_AUDIT_APPROVED);
-        assertNotNull(notification);
-        assertEquals(authorId, notification.getReceiverId());
-        assertEquals(adminId, notification.getSenderId());
+        assertNull(findNotification(article.getId(), NotificationService.TYPE_AUDIT_APPROVED));
     }
 
     @Test
@@ -453,6 +472,34 @@ public class ArticleServiceTest {
         assertFalse(result.getRecords().stream().anyMatch(article -> article.getId().equals(otherAuthor.getId())));
         assertTrue(result.getRecords().stream()
                 .allMatch(article -> ArticleService.STATUS_PUBLISHED.equals(article.getStatus())));
+    }
+
+    @Test
+    void articlePageShouldFillCategoryAndFavoriteCountsInBatch() {
+        Long categoryId = defaultCategoryId();
+        Category category = categoryMapper.selectById(categoryId);
+        Article first = createArticle("批量元数据-1-" + UUID.randomUUID(), "列表应批量补齐元数据", 12101L,
+                categoryId, ArticleService.STATUS_PUBLISHED);
+        Article second = createArticle("批量元数据-2-" + UUID.randomUUID(), "列表应批量补齐元数据", 12102L,
+                categoryId, ArticleService.STATUS_PUBLISHED);
+        insertFavorite(22101L, first.getId());
+        insertFavorite(22102L, second.getId());
+        insertFavorite(22103L, second.getId());
+
+        Page<Article> result = articleService.pageArticles(1, 100);
+        Article firstResult = result.getRecords().stream()
+                .filter(article -> article.getId().equals(first.getId()))
+                .findFirst()
+                .orElseThrow();
+        Article secondResult = result.getRecords().stream()
+                .filter(article -> article.getId().equals(second.getId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(category.getName(), firstResult.getCategoryName());
+        assertEquals(category.getName(), secondResult.getCategoryName());
+        assertEquals(1L, firstResult.getFavoriteCount());
+        assertEquals(2L, secondResult.getFavoriteCount());
     }
 
     @Test

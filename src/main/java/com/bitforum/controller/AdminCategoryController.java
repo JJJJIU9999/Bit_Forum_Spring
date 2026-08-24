@@ -64,7 +64,7 @@ public class AdminCategoryController {
                 request.getDescription(),
                 request.getSortOrder());
         if (result == CategoryUpdateResult.NOT_FOUND) {
-            return Result.fail("板块不存在");
+            return Result.fail(404, "板块不存在");
         }
         if (result == CategoryUpdateResult.NAME_EXISTS) {
             return Result.fail("板块名称已存在");
@@ -77,7 +77,7 @@ public class AdminCategoryController {
     public Result<String> enable(@RequestParam Long categoryId) {
         CategoryUpdateResult result = categoryService.enable(categoryId);
         if (result == CategoryUpdateResult.NOT_FOUND) {
-            return Result.fail("板块不存在");
+            return Result.fail(404, "板块不存在");
         }
         return Result.ok("板块启用成功", null);
     }
@@ -87,7 +87,7 @@ public class AdminCategoryController {
     public Result<String> disable(@RequestParam Long categoryId) {
         CategoryUpdateResult result = categoryService.disable(categoryId);
         if (result == CategoryUpdateResult.NOT_FOUND) {
-            return Result.fail("板块不存在");
+            return Result.fail(404, "板块不存在");
         }
         return Result.ok("板块禁用成功", null);
     }
@@ -97,7 +97,7 @@ public class AdminCategoryController {
     public Result<String> delete(@RequestParam Long categoryId) {
         CategoryDeleteResult result = categoryService.delete(categoryId);
         if (result == CategoryDeleteResult.NOT_FOUND) {
-            return Result.fail("板块不存在");
+            return Result.fail(404, "板块不存在");
         }
         if (result == CategoryDeleteResult.HAS_ARTICLE) {
             return Result.fail("板块下已有文章，不能删除");

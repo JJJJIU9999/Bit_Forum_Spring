@@ -118,12 +118,8 @@ public class ArticleController {
     public Result<String> favorite(
             @RequestParam Long articleId,
             @RequestAttribute("userId") Long userId) {
-        try {
-            articleService.favoriteArticle(userId, articleId);
-            return Result.ok("收藏成功", null);
-        } catch (RuntimeException e) {
-            return Result.fail(e.getMessage());
-        }
+        articleService.favoriteArticle(userId, articleId);
+        return Result.ok("收藏成功", null);
     }
 
     @DeleteMapping("/favorite")
@@ -147,7 +143,7 @@ public class ArticleController {
         try {
             Article article = articleService.findById(request.getArticleId());
             if (article == null) {
-                return Result.fail("文章不存在");
+                return Result.fail(404, "文章不存在");
             }
             if (!article.getUserId().equals(userId)) {
                 return Result.fail("只能修改自己的文章");
@@ -172,7 +168,7 @@ public class ArticleController {
         try {
             Article article = articleService.findById(articleId);
             if (article == null) {
-                return Result.fail("删除失败，没有此文章");
+                return Result.fail(404, "删除失败，没有此文章");
             }
             if (!article.getUserId().equals(userId)) {
                 return Result.fail("只能删除自己的文章");
@@ -220,7 +216,7 @@ public class ArticleController {
     public Result<Article> detail(@RequestParam Long articleId) {
         Article article = articleService.findPublishedById(articleId);
         if (article == null) {
-            return Result.fail("文章不存在");
+            return Result.fail(404, "文章不存在");
         }
         Long views = redisService.getViews(articleId);
         article.setViewCount(views.intValue());
@@ -233,7 +229,7 @@ public class ArticleController {
     public Result<String> view(@RequestParam Long articleId) {
         Article article = articleService.findPublishedById(articleId);
         if (article == null) {
-            return Result.fail("文章不存在");
+            return Result.fail(404, "文章不存在");
         }
         Long views = redisService.increaseViews(articleId);
         redisService.increaseHot(articleId, 1);
@@ -247,7 +243,7 @@ public class ArticleController {
             @RequestAttribute("userId") Long userId) {
         Article article = articleService.findPublishedById(articleId);
         if (article == null) {
-            return Result.fail("文章不存在");
+            return Result.fail(404, "文章不存在");
         }
         if (userId.equals(article.getUserId())) {
             return Result.fail("不能给自己的文章点赞");
@@ -269,7 +265,7 @@ public class ArticleController {
             @RequestAttribute("userId") Long userId) {
         Article article = articleService.findPublishedById(articleId);
         if (article == null) {
-            return Result.fail("文章不存在");
+            return Result.fail(404, "文章不存在");
         }
         redisService.unlike(articleId, userId);
         Long count = redisService.getLikeCount(articleId);

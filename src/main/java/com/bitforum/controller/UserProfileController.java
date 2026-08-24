@@ -76,7 +76,7 @@ public class UserProfileController {
             @RequestParam(defaultValue = "1") long pageNum,
             @RequestParam(defaultValue = "10") long pageSize) {
         if (userService.findById(userId) == null) {
-            return Result.fail("用户不存在");
+            return Result.fail(404, "用户不存在");
         }
         Page<Article> articlePage = articleService.pagePublishedArticlesByUser(userId, pageNum, pageSize);
         return Result.ok("用户公开文章分页查询成功", articlePage);

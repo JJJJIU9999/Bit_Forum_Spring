@@ -1,15 +1,23 @@
 package com.bitforum.service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -222,13 +230,17 @@ public class ArticleService {
                 .eq("user_id", userId)
                 .eq("article_id", articleId));
         if (count > 0) {
-            throw new RuntimeException("不能重复收藏同一篇文章");
+            throw favoriteConflict();
         }
 
         ArticleFavorite favorite = new ArticleFavorite();
         favorite.setUserId(userId);
         favorite.setArticleId(articleId);
-        articleFavoriteMapper.insert(favorite);
+        try {
+            articleFavoriteMapper.insert(favorite);
+        } catch (DuplicateKeyException e) {
+            throw favoriteConflict();
+        }
         notificationService.notifyFavorite(article, userId);
     }
 
@@ -304,8 +316,7 @@ public class ArticleService {
         article.setStatus(STATUS_PUBLISHED);
         articleMapper.updateById(article);
         recordAudit(articleId, auditorId, STATUS_PUBLISHED, null);
-        sendPublishMessage(article);
-        notificationService.notifyAuditApproved(article, auditorId);
+        sendPublishMessage(article, auditorId);
         log.info("文章审核通过，MQ 消息已发送");
     }
 
@@ -365,6 +376,10 @@ public class ArticleService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    private ResponseStatusException favoriteConflict() {
+        return new ResponseStatusException(HttpStatus.CONFLICT, "不能重复收藏同一篇文章");
+    }
+
     private Article findOwnedArticle(Long userId, Long articleId) {
         Article article = articleMapper.selectById(articleId);
         if (article == null) {
@@ -383,10 +398,11 @@ public class ArticleService {
         redisService.deleteArticleData(articleId);
     }
 
-    private void sendPublishMessage(Article article) {
+    private void sendPublishMessage(Article article, Long auditorId) {
         ArticlePublishMessage articlePublishMessage = new ArticlePublishMessage();
         articlePublishMessage.setArticleId(article.getId());
         articlePublishMessage.setUserId(article.getUserId());
+        articlePublishMessage.setAuditorId(auditorId);
         articlePublishMessage.setTitle(article.getTitle());
         articlePublishMessage.setPublishTime(System.currentTimeMillis());
         articlePublishMessage.setMessageId(UUID.randomUUID().toString());
@@ -420,8 +436,41 @@ public class ArticleService {
         if (articles == null || articles.isEmpty()) {
             return;
         }
+
+        Set<Long> categoryIds = articles.stream()
+                .map(Article::getCategoryId)
+                .filter(categoryId -> categoryId != null)
+                .collect(Collectors.toSet());
+        Map<Long, Category> categoriesById = categoryIds.isEmpty()
+                ? Map.of()
+                : categoryMapper.selectBatchIds(categoryIds).stream()
+                        .collect(Collectors.toMap(Category::getId, Function.identity()));
+
+        Set<Long> articleIds = articles.stream()
+                .map(Article::getId)
+                .filter(articleId -> articleId != null)
+                .collect(Collectors.toSet());
+        Map<Long, Long> favoriteCounts = new HashMap<>();
+        if (!articleIds.isEmpty()) {
+            QueryWrapper<ArticleFavorite> favoriteQuery = new QueryWrapper<>();
+            favoriteQuery.select("article_id", "COUNT(*) AS favorite_count")
+                    .in("article_id", articleIds)
+                    .groupBy("article_id");
+            for (Map<String, Object> row : articleFavoriteMapper.selectMaps(favoriteQuery)) {
+                Number articleId = (Number) row.get("article_id");
+                Number favoriteCount = (Number) row.get("favorite_count");
+                if (articleId != null && favoriteCount != null) {
+                    favoriteCounts.put(articleId.longValue(), favoriteCount.longValue());
+                }
+            }
+        }
+
         for (Article article : articles) {
-            fillArticleMetadata(article);
+            Category category = categoriesById.get(article.getCategoryId());
+            if (category != null) {
+                article.setCategoryName(category.getName());
+            }
+            article.setFavoriteCount(favoriteCounts.getOrDefault(article.getId(), 0L));
         }
     }
 

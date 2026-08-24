@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +40,7 @@ public class RedisServiceTest {
                 lowHotArticleId.toString(),
                 highHotArticleId.toString());
         messageId = "test-message-" + UUID.randomUUID();
-        stringRedisTemplate.opsForSet().remove("mq:processed:article_publish", messageId);
+        stringRedisTemplate.delete(processedMessageKey());
     }
 
     @AfterEach
@@ -50,7 +51,7 @@ public class RedisServiceTest {
         stringRedisTemplate.opsForZSet().remove("article:hot",
                 lowHotArticleId.toString(),
                 highHotArticleId.toString());
-        stringRedisTemplate.opsForSet().remove("mq:processed:article_publish", messageId);
+        stringRedisTemplate.delete(processedMessageKey());
     }
 
     @Test
@@ -96,11 +97,17 @@ public class RedisServiceTest {
     }
 
     @Test
-    void sameMessageShouldOnlyBeProcessedOnce() {
-        // 第一次把 messageId 加入 Redis Set，返回 true，代表这条 MQ 消息可以继续处理。
-        assertTrue(redisService.markMessageProcessed(messageId));
+    void processedMessageShouldBeRecordedWithBoundedTtl() {
+        assertFalse(redisService.isMessageProcessed(messageId));
 
-        // 第二次加入同一个 messageId，Redis Set 会去重，返回 false，代表这是重复消费，业务应跳过。
-        assertFalse(redisService.markMessageProcessed(messageId));
+        redisService.markMessageProcessed(messageId);
+
+        assertTrue(redisService.isMessageProcessed(messageId));
+        Long ttlDays = stringRedisTemplate.getExpire(processedMessageKey(), TimeUnit.DAYS);
+        assertTrue(ttlDays != null && ttlDays >= 6 && ttlDays <= 7);
+    }
+
+    private String processedMessageKey() {
+        return "mq:processed:article_publish:" + messageId;
     }
 }

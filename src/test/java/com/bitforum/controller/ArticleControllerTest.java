@@ -15,9 +15,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bitforum.entity.Article;
@@ -138,7 +140,7 @@ class ArticleControllerTest {
         mockMvc.perform(post("/api/article/like")
                 .param("articleId", "3")
                 .header("Authorization", "Bearer user-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("不能给自己的文章点赞"));
 
@@ -161,7 +163,7 @@ class ArticleControllerTest {
                 .header("Authorization", "Bearer user-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"articleId\":4,\"title\":\"新标题\",\"content\":\"新内容\",\"coverUrl\":\"/uploads/article-cover/cover.jpg\"}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("只能修改草稿或被驳回文章"));
     }
@@ -179,9 +181,44 @@ class ArticleControllerTest {
         mockMvc.perform(delete("/api/article/delete")
                 .param("articleId", "5")
                 .header("Authorization", "Bearer user-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("删除失败，请稍后重试"));
+    }
+
+    @Test
+    void missingArticleDetailShouldReturnNotFound() throws Exception {
+        when(articleService.findPublishedById(404L)).thenReturn(null);
+
+        mockMvc.perform(get("/api/article/detail").param("articleId", "404"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.message").value("文章不存在"));
+    }
+
+    @Test
+    void duplicateFavoriteShouldReturnConflict() throws Exception {
+        mockEnabledUser("user-token", 56L);
+        doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "不能重复收藏同一篇文章"))
+                .when(articleService).favoriteArticle(56L, 6L);
+
+        mockMvc.perform(post("/api/article/favorite")
+                .param("articleId", "6")
+                .header("Authorization", "Bearer user-token"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(409))
+                .andExpect(jsonPath("$.message").value("不能重复收藏同一篇文章"));
+    }
+
+    @Test
+    void unexpectedExceptionShouldReturnInternalServerError() throws Exception {
+        when(articleService.searchPublishedArticles("boom", null, 1, 10))
+                .thenThrow(new RuntimeException("sensitive detail"));
+
+        mockMvc.perform(get("/api/article/search").param("keyword", "boom"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.message").value("服务器内部错误，请稍后尝试"));
     }
 
     private void mockEnabledUser(String token, Long userId) {

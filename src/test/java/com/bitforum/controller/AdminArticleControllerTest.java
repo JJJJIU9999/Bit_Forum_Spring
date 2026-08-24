@@ -101,7 +101,7 @@ class AdminArticleControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"articleId\":1,\"reason\":\"\"}")
                 .header("Authorization", "Bearer admin-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
     }
 
@@ -142,8 +142,8 @@ class AdminArticleControllerTest {
         mockMvc.perform(delete("/api/admin/article/delete")
                 .param("articleId", "404")
                 .header("Authorization", "Bearer admin-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value("文章不存在"));
     }
 

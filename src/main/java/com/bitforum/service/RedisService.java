@@ -1,5 +1,7 @@
 package com.bitforum.service;
 
+import java.time.Duration;
+
 import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RedisService {
+    private static final String PROCESSED_MESSAGE_KEY_PREFIX = "mq:processed:article_publish:";
+    private static final Duration PROCESSED_MESSAGE_TTL = Duration.ofDays(7);
     
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -80,9 +84,16 @@ public class RedisService {
         redisTemplate.opsForZSet().remove("article:hot", articleId.toString());
     }
 
-    public boolean markMessageProcessed(String messageId) {
-        // Redis Set 天然去重：第一次 add 返回 1，重复 add 返回 0，可用来判断 MQ 消息是否已处理过。
-        Long addCount = redisTemplate.opsForSet().add("mq:processed:article_publish", messageId);
-        return addCount != null && addCount == 1;
+    public boolean isMessageProcessed(String messageId) {
+        return Boolean.TRUE.equals(redisTemplate.hasKey(processedMessageKey(messageId)));
+    }
+
+    public void markMessageProcessed(String messageId) {
+        // 独立 key 让每条消息都有自己的生命周期；7 天覆盖常规排障/重放窗口，避免永久 Set 无限增长。
+        redisTemplate.opsForValue().set(processedMessageKey(messageId), "1", PROCESSED_MESSAGE_TTL);
+    }
+
+    private String processedMessageKey(String messageId) {
+        return PROCESSED_MESSAGE_KEY_PREFIX + messageId;
     }
 }
