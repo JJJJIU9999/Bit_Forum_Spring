@@ -1,463 +1,199 @@
-# 比特论坛 - Spring Boot 轻量级论坛系统
+# Bit Forum
 
-## 项目简介
+> 社区内容审核与互动治理平台
 
-这是一个基于 Spring Boot 3 的轻量级论坛系统，核心功能包括用户注册登录、文章发布、评论、浏览量统计、点赞去重、热门排行、RabbitMQ 异步通知和 Docker Compose 部署。
+基于 Spring Boot、MyBatis-Plus、Redis 与 RabbitMQ 构建，覆盖内容发布审核、用户互动、举报治理、通知、运营看板和后台管理，并通过 React/Nginx 与 Docker Compose 提供完整的前后端运行环境。
 
-项目从 JDBC 版本升级到 Spring Boot 版本，重点练习了接口开发、前后端联调、MySQL 持久化、Redis 缓存设计、RabbitMQ 异步解耦、Docker 部署和常见质量问题修复。
+这是一个持续迭代的个人毕业设计与 Java 后端求职项目。项目重点是呈现可追踪的业务状态流转、数据一致性处理与工程化实践，不宣称生产级流量或大型分布式系统能力。
+
+## 核心能力
+
+- **内容生命周期**：草稿、提交审核、审核通过/驳回、发布和下架，保留审核记录与处理原因。
+- **社区互动**：评论、点赞、收藏、关注、通知、公开主页与个人内容管理。
+- **内容治理**：文章/评论举报、数据库唯一约束防止并发重复举报、管理员处理与状态流转。
+- **实时指标**：Redis String 记录浏览量、Set 完成点赞去重、ZSet 维护热门排行，定时同步核心指标到 MySQL。
+- **后台管理**：内容审核、用户与板块管理、举报处理、数据看板和依赖健康检查。
+- **工程交付**：Flyway 迁移、OpenAPI、Actuator、自动化测试、React/Nginx 镜像与五服务 Compose 编排。
 
 ## 技术栈
 
-| 类别 | 技术 |
+| 层次 | 技术 |
 | --- | --- |
-| 语言 | Java 17 |
-| 框架 | Spring Boot 3.4.5 |
-| ORM | MyBatis-Plus 3.5.9 |
-| 数据库 | MySQL 8.0 |
-| 数据库迁移 | Flyway |
-| 缓存 | Redis 7 |
-| 消息队列 | RabbitMQ 3 |
-| 认证 | JWT + BCrypt |
-| 参数校验 | Jakarta Validation |
-| 测试 | JUnit 5 + Spring Boot Test + Mockito |
-| 部署 | Docker + Docker Compose + Nginx |
-| 前端 | React 19 + Vite 7 + React Router 7 + Axios |
+| 后端 | Java 17、Spring Boot 3.4.5、Spring MVC、MyBatis-Plus 3.5.9 |
+| 数据 | MySQL 8、Flyway V1-V11、Redis 7 |
+| 消息 | RabbitMQ 3、Publisher Confirm/Returns、手动 ACK、DLX/DLQ |
+| 安全 | JWT、BCrypt、Jakarta Validation、用户/管理员拦截器 |
+| 可观测与文档 | Actuator、Springdoc OpenAPI |
+| 测试 | JUnit 5、Spring Boot Test、Mockito、Vitest、Testing Library |
+| 前端 | React 19、Vite 7、React Router 7、Axios、Nginx |
+| 部署 | Maven、Docker、Docker Compose |
 
-## 核心功能
+## 系统架构
 
-- 用户注册、登录：使用 BCrypt 存储密码哈希，登录成功后返回 JWT。
-- 接口安全：注册接口返回 `UserResponse`，不直接返回 `User` 实体和密码字段。
-- JWT 认证：写操作通过拦截器校验 `Authorization: Bearer <token>`。
-- 管理员权限：`/api/admin/**` 接口会校验 JWT、账号状态和 `ADMIN` 角色。
-- 文章管理：草稿、提交审核、审核发布、驳回、下架、编辑、删除、详情、列表、分页查询。
-- 数据一致性：浏览、点赞、评论前校验文章存在；删除文章时清理评论和 Redis 数据。
-- 评论功能：发布评论、按文章查询评论。
-- Redis 浏览量：使用 String 记录文章浏览量。
-- Redis 点赞去重：使用 Set 防止同一用户重复点赞。
-- Redis 热门排行：使用 ZSet 按热度分数维护热门文章。
-- RabbitMQ 异步通知：管理员审核通过文章后发送结构化消息 `ArticlePublishMessage`。
-- RabbitMQ 可靠性：生产者 Confirm/Returns、消费者手动 ACK、Redis 幂等、DLX/DLQ 失败兜底。
-- Docker Compose：一键启动 MySQL、Redis、RabbitMQ、Spring Boot 和 React/Nginx 五个服务。
+```mermaid
+flowchart LR
+    Browser[浏览器] --> Nginx[Nginx :80]
+    Nginx -->|静态资源| React[React 应用]
+    Nginx -->|/api 与 /uploads| App[Spring Boot :8080]
+    App -->|业务数据 / Flyway| MySQL[(MySQL 8)]
+    App -->|浏览 / 点赞 / 热榜 / 幂等标记| Redis[(Redis 7)]
+    App -->|文章发布事件| MQ[RabbitMQ]
+    MQ --> Consumer[消息消费者]
+    App --> Uploads[(uploads-data 卷)]
+```
 
-## 毕业设计扩展模块
+Compose 实际编排 `frontend`、`app`、`mysql`、`redis`、`rabbitmq` 五个服务。Nginx 托管 React 构建产物，并把 `/api` 与 `/uploads` 转发到 Spring Boot。
+
+## 核心业务链路
+
+### 1. 内容审核
+
+```text
+创建草稿 DRAFT
+  → 提交审核 PENDING
+  → 管理员审核
+      ├─ 通过 → PUBLISHED → 审核记录 + 通知 + MQ 事件
+      └─ 驳回 → REJECTED → 驳回原因 + 通知
+  → 已发布内容可由管理员下架 OFFLINE
+```
+
+普通用户只能操作自己的草稿或被驳回文章；管理员接口会重新查询数据库中的账号状态和角色，不只信任 JWT 中的身份信息。
+
+### 2. 举报治理
+
+```text
+用户举报文章/评论
+  → 校验内容状态、作者与举报人
+  → 应用层重复检查
+  → 数据库生成列 + 唯一索引拦截并发重复举报
+  → 管理员处理
+  → RESOLVED / REJECTED
+```
+
+重复举报控制最终落在数据库唯一约束上，避免只依赖“先查询再插入”的竞态判断。
+
+### 3. Redis 指标
+
+```text
+文章浏览 → String 计数 ┐
+文章点赞 → Set 去重    ├→ ZSet 热度排行
+                       └→ 定时任务读取 Redis → MySQL 持久化
+```
+
+Redis 承担实时写入与排行查询，MySQL 保存可持久化的浏览量和点赞数。当前采用定时同步实现最终一致性，不把它描述成跨 Redis/MySQL 的强事务。
+
+### 4. RabbitMQ 事件
+
+```text
+管理员审核通过
+  → RabbitTemplate 发布 ArticlePublishMessage
+  → DirectExchange 路由到 article.publish.queue
+  → 消费者幂等检查与业务处理
+  → 成功 basicAck
+  → 失败 basicNack(requeue=false) → DLX → DLQ
+```
+
+项目已实现 Confirm/Returns 回调、JSON 消息、手动 ACK/NACK、Redis 幂等标记和 DLQ 基础链路；尚未实现完整 Outbox、确认失败自动重试或自动补偿，详见 [求职展示代码审计](./docs/recruitment-audit.md)。
+
+## 业务模块
 
 | 模块 | 已实现能力 |
 | --- | --- |
-| M1 板块分类 | 板块管理、发文板块校验、列表筛选 |
-| M2 文章审核 | 草稿、待审、发布、驳回、下架状态流转与审核记录 |
-| M3 收藏与搜索 | 文章收藏、取消收藏、我的收藏、标题/正文搜索 |
-| M4 通知中心 | 评论、点赞、收藏和审核通知，未读统计与已读操作 |
-| M5 举报治理 | 文章/评论举报、用户查询、管理员处理与并发去重 |
-| M6 数据看板 | 用户、内容、举报、通知、板块与 Redis 热榜统计 |
-| M7 用户资料 | 头像、昵称、简介、公开主页和已发布文章 |
-| M8 OpenAPI | Swagger UI、OpenAPI JSON 与 JWT 安全声明 |
-| M9 关注关系 | 关注/取关、粉丝与关注列表、关系统计 |
-| M10 文件上传 | 头像与文章封面上传、类型/大小/路径校验 |
-| M11 指标同步 | Redis 浏览量和点赞数定时同步到 MySQL |
-| M12 健康检查 | Actuator 与管理员 MySQL/Redis/RabbitMQ 聚合检查 |
+| 用户与权限 | 注册登录、BCrypt、JWT、账号状态复核、用户/管理员权限隔离 |
+| 板块与内容 | 板块管理、草稿、审核状态流转、搜索、分页、封面上传 |
+| 社区互动 | 评论、点赞、收藏、关注/取关、粉丝/关注列表 |
+| 通知中心 | 评论、点赞、收藏、审核与下架通知，未读统计和已读操作 |
+| 举报治理 | 文章/评论举报、并发重复限制、管理员处理 |
+| 运营后台 | 用户、内容、板块、举报管理，统计看板与健康检查 |
+| 数据与接口 | Redis 热榜与指标同步、Flyway 迁移、Swagger/OpenAPI、Actuator |
 
-数据库结构由 `src/main/resources/db/migration` 下的 Flyway V1-V11 管理。
+## 可在面试中展开的工程点
+
+1. **状态机式内容审核**：用明确状态与允许的转换约束编辑、审核、发布和下架操作，并持久化审核记录。
+2. **按访问模式选择 Redis 结构**：String 适合计数，Set 适合用户级去重，ZSet 适合按分数排序的热门榜。
+3. **数据库约束兜底并发一致性**：收藏、关注和待处理举报均使用唯一索引；关注与举报在并发重复时会转换为业务提示。
+4. **消息可靠性基础链路**：区分 Broker Confirm、路由 Returns、消费者 ACK 与死信处理，同时明确当前补偿能力的边界。
+5. **后端最终鉴权与响应脱敏**：拦截器回查用户状态/角色，DTO 不返回密码字段，上传路径做规范化检查。
+6. **可复现的工程交付**：Flyway 管理数据库版本，OpenAPI 提供接口文档，Compose 统一前后端和基础设施环境。
 
 ## 项目结构
 
 ```text
-src/main/java/com/bitforum/
-├── common/                 # 统一返回结果、热门文章返回对象
-├── config/                 # Web、JWT、MyBatis-Plus、RabbitMQ 配置
-├── controller/             # 用户、文章、评论接口
-├── dto/                    # Request / Response DTO
-├── entity/                 # 数据库实体
-├── exception/              # 全局异常处理
-├── interceptor/            # JWT 登录拦截器
-├── mapper/                 # MyBatis-Plus Mapper
-├── message/                # RabbitMQ 消息对象
-├── service/                # 核心业务逻辑
-└── util/                   # JWT 工具类
+.
+├── src/main/java/com/bitforum/       # Controller、Service、Mapper、DTO、配置与任务
+├── src/main/resources/
+│   ├── application.yml               # 环境变量驱动的运行配置
+│   └── db/migration/                  # Flyway V1-V11
+├── src/test/                          # 后端控制器、服务与集成测试
+├── frontend/                          # React/Vite 前端与 Nginx 镜像
+├── docs/
+│   ├── graduation/                    # 毕业设计模块与过程记录
+│   ├── interview/                     # 演示与面试材料
+│   └── recruitment-audit.md           # 本轮只记录、未大改的代码问题
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+└── pom.xml
 ```
 
 ## 快速启动
 
-### 方式一：Docker Compose 启动完整环境
+### Docker Compose
 
-前置要求：
-
-- Docker Desktop 已启动。
-- 本机 `80`、`8080`、`3307`、`6379`、`5672`、`15672` 端口没有被占用。
-
-启动命令：
+前置要求：Docker Desktop，且本机 `80`、`8080`、`3307`、`6379`、`5672`、`15672` 端口可用。
 
 ```powershell
-cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring
+git clone https://github.com/JJJJIU9999/Bit_Forum_Spring.git
+cd Bit_Forum_Spring
+Copy-Item .env.example .env
+# 编辑 .env，替换数据库、RabbitMQ 与 JWT 占位值
+docker compose config --quiet
 docker compose up --build -d
 ```
 
-启动后访问：
+启动后：
 
 | 服务 | 地址 |
 | --- | --- |
-| React/Nginx 前端 | `http://localhost` |
-| 后端接口 | `http://localhost:8080` |
+| 前端 | `http://localhost` |
+| 后端 API | `http://localhost:8080` |
+| Swagger UI | `http://localhost:8080/swagger-ui.html` |
+| Actuator 健康检查 | `http://localhost:8080/actuator/health` |
 | RabbitMQ 管理台 | `http://localhost:15672` |
-| MySQL 宿主机端口 | `localhost:3307` |
-| Redis 宿主机端口 | `localhost:6379` |
+| MySQL（宿主机） | `localhost:3307` |
 
-RabbitMQ 管理台账号密码从本地 `.env` 读取：
-
-```text
-见 `.env.example`
-```
-
-说明：
-
-- Compose 内部后端服务通过 `mysql:3306` 访问 MySQL。
-- 宿主机访问 Compose 里的 MySQL 使用 `localhost:3307`。
-- React 生产文件由 Node 22 构建后交给 Nginx 托管；`/api` 和 `/uploads` 由 Nginx 转发到后端。
-- 后端上传目录通过 `uploads-data` 命名卷持久化，普通重建不会删除已有头像和封面。
-- 运行 Docker Compose 前，先参考 `.env.example` 创建本地 `.env`，不要提交真实 `.env`。
-- Flyway 会按 V1-V11 初始化或校验数据库结构。
-
-普通停止：
+普通停止会保留 MySQL 与上传数据卷：
 
 ```powershell
 docker compose down
 ```
 
-不要把 `docker compose down -v` 当作普通停止命令：`-v` 会同时删除 MySQL 和上传数据卷。
+不要把 `docker compose down -v` 当作普通停止命令，它会删除数据卷。
 
-### 方式二：本地 Maven 启动后端
+### 本地开发与验证
 
-前置要求：
-
-- 本机已启动 MySQL、Redis、RabbitMQ。
-- MySQL 中存在 `bit_forum` 数据库。
-- `application.yml` 中的连接配置和本机环境一致。
-
-启动命令：
+本地运行后端前，需提供 `SPRING_DATASOURCE_PASSWORD`、`SPRING_RABBITMQ_PASSWORD` 和不少于 32 字节的 `JWT_SECRET`，并确保 MySQL、Redis、RabbitMQ 地址与本机环境一致。
 
 ```powershell
-cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring
-mvn spring-boot:run
-```
-
-运行测试：
-
-```powershell
+# 后端
 mvn test
-```
+mvn spring-boot:run
 
-### 方式三：本地开发模式启动 React 前端
-
-前置要求：
-
-- 后端已启动在 `http://localhost:8080`。
-- 前端依赖已安装。
-
-第一次进入前端目录时安装依赖：
-
-```powershell
-cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring\frontend
+# 前端
+cd frontend
 npm ci
-```
-
-启动前端开发服务器：
-
-```powershell
-cd D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring\frontend
+npm test
+npm run build
 npm run dev
 ```
 
-浏览器访问：
+前端开发服务器默认访问 `http://localhost:5173`，Vite 将 `/api` 请求代理到 `http://localhost:8080`。
 
-```text
-http://localhost:5173
-```
+## 项目边界
 
-前端覆盖登录注册、文章列表/详情/投稿审核、个人中心、通知、关注、点赞、收藏、评论、举报，以及管理员看板和治理页面。
+- 本项目是个人毕业设计和求职作品，没有真实生产用户量、QPS 或线上可用性数据。
+- `@Transactional` 只覆盖本地 MySQL 事务，不自动覆盖 RabbitMQ 与 Redis。
+- MQ 当前是可靠性基础实现，不宣称 Exactly Once、绝对不丢消息或完整自动补偿。
+- Redis 指标同步属于最终一致性方案；现有全量扫描、N+1 查询、幂等标记时机和测试隔离等问题已如实记录，留待后续按优先级处理。
 
-详细启动顺序、演示账号和浏览器验证流程见：
-
-[React Frontend Demo Guide](./docs/phase2-frontend-plan/frontend-demo-guide.md)
-
-### 创建管理员账号（方式 A：手动 SQL）
-
-当前项目不会在代码里硬编码管理员账号。推荐先通过注册接口创建一个普通用户，再手动把这个用户提升为管理员：
-
-```http
-POST /api/user/register
-Content-Type: application/json
-```
-
-```json
-{
-  "username": "admin_user",
-  "password": "123456"
-}
-```
-
-然后连接 MySQL，只修改这个用户的 `role/status`：
-
-```sql
-USE bit_forum;
-
-UPDATE user_info
-SET role = 'ADMIN',
-    status = 1
-WHERE username = 'admin_user';
-
-SELECT id, username, role, status
-FROM user_info
-WHERE username = 'admin_user';
-```
-
-这样密码仍然由注册流程使用 BCrypt 加密保存，SQL 只负责授予管理员身份。
-
-## 接口验证流程
-
-下面请求体都使用 JSON。需要登录的接口必须在 Header 中携带：
-
-```text
-Authorization: Bearer <token>
-```
-
-### 1. 注册
-
-```http
-POST /api/user/register
-Content-Type: application/json
-```
-
-```json
-{
-  "username": "testuser",
-  "password": "123456"
-}
-```
-
-注册成功后返回用户基础信息，不返回密码哈希。
-
-### 2. 登录
-
-```http
-POST /api/user/login
-Content-Type: application/json
-```
-
-```json
-{
-  "username": "testuser",
-  "password": "123456"
-}
-```
-
-登录成功后从 `data.token` 中复制 JWT。
-
-### 3. 提交文章审核
-
-```http
-POST /api/article/publish
-Content-Type: application/json
-Authorization: Bearer <token>
-```
-
-```json
-{
-  "title": "第一篇文章",
-  "content": "这是文章内容",
-  "categoryId": 1
-}
-```
-
-提交成功后文章进入 `PENDING` 待审核状态。管理员审核通过后，文章变为 `PUBLISHED` 并发送 RabbitMQ 异步通知消息。
-
-### 4. 查看分页文章
-
-```http
-GET /api/article/page?pageNum=1&pageSize=10
-```
-
-分页结果中包含 `records`、`total`、`pages`、`current`、`size` 等信息。
-
-### 5. 查看文章详情
-
-```http
-GET /api/article/detail?articleId=1
-```
-
-### 6. 浏览文章
-
-```http
-GET /api/article/view?articleId=1
-```
-
-浏览前会先校验文章存在，然后 Redis 浏览量加 1，热门分数加 1。
-
-### 7. 点赞文章
-
-```http
-POST /api/article/like?articleId=1
-Authorization: Bearer <token>
-```
-
-点赞前会先校验文章存在，然后 Redis Set 记录用户点赞，热门分数加 3。
-
-### 8. 查看热门文章
-
-```http
-GET /api/article/hot
-```
-
-热门排行从 Redis ZSet 读取，不再遍历 MySQL 全量文章计算。
-
-### 9. 发布评论
-
-```http
-POST /api/comment/publish
-Content-Type: application/json
-Authorization: Bearer <token>
-```
-
-```json
-{
-  "articleId": 1,
-  "content": "这是一条评论"
-}
-```
-
-评论前会先校验文章存在，避免产生脏评论。
-
-## API 总览
-
-### 用户接口
-
-| 方法 | 地址                 | 是否登录 | 请求方式  |
-| ---- | -------------------- | -------- | --------- |
-| POST | `/api/user/register` | 否       | JSON Body |
-| POST | `/api/user/login`    | 否       | JSON Body |
-
-### 文章接口
-
-| 方法   | 地址                                         | 是否登录 | 说明                   |
-| ------ | -------------------------------------------- | -------- | ---------------------- |
-| POST   | `/api/article/publish`                       | 是       | 兼容旧路径，提交文章审核 |
-| POST   | `/api/article/draft`                         | 是       | 保存草稿               |
-| PUT    | `/api/article/draft`                         | 是       | 更新草稿或被驳回文章   |
-| POST   | `/api/article/submit?articleId=1`            | 是       | 提交草稿或被驳回文章审核 |
-| PUT    | `/api/article/update`                        | 是       | 修改文章，仅作者可操作 |
-| DELETE | `/api/article/delete?articleId=1`            | 是       | 删除文章，仅作者可操作 |
-| GET    | `/api/article/listAll`                       | 否       | 查询已发布文章         |
-| GET    | `/api/article/page?pageNum=1&pageSize=10`    | 否       | 分页查询已发布文章     |
-| GET    | `/api/article/detail?articleId=1`            | 否       | 查询已发布文章详情     |
-| GET    | `/api/article/view?articleId=1`              | 否       | 浏览已发布文章         |
-| POST   | `/api/article/like?articleId=1`              | 是       | 点赞                   |
-| POST   | `/api/article/unlike?articleId=1`            | 是       | 取消点赞               |
-| GET    | `/api/article/hot`                           | 否       | 已发布文章热门排行     |
-
-### 作者文章接口
-
-| 方法 | 地址 | 是否登录 | 说明 |
-| --- | --- | --- | --- |
-| GET | `/api/user/articles?pageNum=1&pageSize=10&status=PENDING` | 是 | 作者查看自己的全部状态文章，可选状态筛选 |
-
-文章更新请求体：
-
-```json
-{
-  "articleId": 1,
-  "title": "修改后的标题",
-  "content": "修改后的内容"
-}
-```
-
-### 评论接口
-
-| 方法 | 地址                                    | 是否登录 | 说明         |
-| ---- | --------------------------------------- | -------- | ------------ |
-| POST | `/api/comment/publish`                  | 是       | 发布评论     |
-| GET  | `/api/comment/listAll?articleId=1`      | 否       | 查询文章评论 |
-
-### 管理员接口
-
-管理员接口都需要在 Header 中携带管理员 JWT：
-
-```text
-Authorization: Bearer <admin-token>
-```
-
-| 方法   | 地址                                             | 权限要求 | 说明 |
-| ------ | ------------------------------------------------ | -------- | ---- |
-| GET    | `/api/admin/health`                              | 管理员   | 验证管理员权限链路 |
-| GET    | `/api/admin/article/page?pageNum=1&pageSize=10`  | 管理员   | 分页查询文章 |
-| GET    | `/api/admin/article/audit/page?status=PENDING&pageNum=1&pageSize=10` | 管理员 | 分页查询待审核文章 |
-| PUT    | `/api/admin/article/audit/approve?articleId=1`   | 管理员   | 审核通过文章，变为已发布 |
-| PUT    | `/api/admin/article/audit/reject`                | 管理员   | 驳回文章，并记录驳回原因 |
-| PUT    | `/api/admin/article/offline`                     | 管理员   | 下架已发布文章 |
-| DELETE | `/api/admin/article/delete?articleId=1`          | 管理员   | 删除任意文章，并清理评论和 Redis 数据 |
-| GET    | `/api/admin/comment/page?pageNum=1&pageSize=10`  | 管理员   | 分页查询评论 |
-| DELETE | `/api/admin/comment/delete?commentId=1`          | 管理员   | 删除任意评论 |
-| GET    | `/api/admin/user/page?pageNum=1&pageSize=10`     | 管理员   | 分页查询用户，响应不包含 `password` |
-| PUT    | `/api/admin/user/disable?userId=2`               | 管理员   | 禁用用户，不能禁用当前管理员自己 |
-| PUT    | `/api/admin/user/enable?userId=2`                | 管理员   | 启用用户 |
-
-## RabbitMQ 链路说明
-
-文章审核通过后的异步链路：
-
-```text
-ArticleService.approve
-  -> RabbitTemplate.convertAndSend(article.exchange, article.publish, ArticlePublishMessage)
-  -> article.publish.queue
-  -> NotificationListener.handlePublish
-```
-
-可靠性设计：
-
-- 生产者开启 `publisher-confirm-type: correlated`，确认消息是否到达 Broker。
-- 生产者开启 `publisher-returns: true` 和 `mandatory: true`，确认消息是否成功路由到队列。
-- 消息体使用 `ArticlePublishMessage`，包含 `messageId`、`articleId`、`userId`、`title`、`publishTime`。
-- 消费者使用手动 ACK，成功后 `basicAck`，失败后 `basicNack(requeue=false)`。
-- 使用 Redis Set 记录已处理的 `messageId`，避免重复消费。
-- 普通队列配置 DLX，失败消息进入 `article.publish.dlq`，由 DLQ 监听器记录日志，方便后续排查和补偿。
-
-## 面试演示流程
-
-建议 5 分钟演示顺序：
-
-1. 运行 `docker compose up --build -d`，说明 React/Nginx、Spring Boot、MySQL、Redis、RabbitMQ 五个服务由 Compose 编排。
-2. 注册用户，强调注册响应不返回密码哈希。
-3. 登录拿到 JWT，说明写接口通过拦截器校验登录态。
-4. 提交文章审核，管理员审核通过后观察数据库状态变化和 RabbitMQ 消费者日志。
-5. 浏览文章和点赞文章，说明 Redis String、Set、ZSet 分别承担浏览量、点赞去重、热门排行。
-6. 发布评论，说明评论前校验文章存在。
-7. 运行 `mvn test`，说明核心业务已经有自动化测试覆盖。
-
-详细讲稿见：[5分钟项目演示稿.md](./docs/interview/5分钟项目演示稿.md)。
-
-面试前最终检查见：[面试前最终改进清单.md](./docs/interview/面试前最终改进清单.md)。
-
-## 常用排查命令
-
-```powershell
-# 查看 Compose 解析后的最终配置
-docker compose config
-
-# 启动并重新构建五个服务
-docker compose up --build -d
-
-# 查看容器状态
-docker compose ps
-
-# 单独查看后端日志
-docker compose logs -f app
-
-# 普通停止并保留数据卷
-docker compose down
-
-# 运行自动化测试
-mvn test
-```
-
-## 项目亮点总结
-
-面试中可以这样概括：
-
-> 我做了一个 Spring Boot + React 社区论坛，实现了注册登录、JWT 权限、板块、文章草稿与审核状态机、评论、点赞、收藏、通知、举报治理、用户主页与关注、文件上传、Redis 热榜和指标同步，以及管理员看板和健康检查。工程上使用 Flyway V1-V11 管理数据库，RabbitMQ 实现 Confirm/Returns、手动 ACK、幂等与 DLQ 基础机制，并通过 Docker Compose 编排 React/Nginx、Spring Boot、MySQL、Redis、RabbitMQ 五个服务。
+更多演示材料见 [5 分钟项目演示稿](./docs/interview/5分钟项目演示稿.md)；当前技术债和面试追问点见 [求职展示代码审计](./docs/recruitment-audit.md)。

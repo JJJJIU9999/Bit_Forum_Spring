@@ -1,6 +1,6 @@
-# Bit Forum 项目完整总结（供 GPT 更新记忆）
+# Bit Forum 项目完整历史总结
 
-## 2026-08-24 AI 改造前基线收口更新
+## 2026-08-24 求职展示整改前基线收口更新
 
 - Docker/Nginx、五服务 Compose、上传卷和 README 已由本地提交 `0c89922 feat(deploy): add Nginx frontend to Docker Compose` 收口。
 - 文章详情间距修复已由本地提交 `d9d4f48 fix(frontend): correct article detail spacing` 单独收口。
@@ -12,7 +12,7 @@
 下文保留 2026-08-02 核查快照，便于追溯当时的代码与工作区状态。其中“Docker 前端化尚未提交”“当前下一步先提交 Docker”等说法已被本节覆盖，不再代表 2026-08-24 的当前状态。
 
 > 核查日期：2026-08-02
-> 项目路径：`D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring`
+> 项目位置：仓库根目录
 > 核查依据：当前 Git 工作区、Java/React 源码、Flyway 迁移、自动化测试、Docker 配置和 `docs/graduation` 模块记录。
 > 使用说明：请用本文替换旧的 Bit Forum 记忆摘要。本文明确区分“已提交”“当前工作区已实现但未提交”“仍待完成”，不要把待办或风险写成已实现能力。
 
@@ -465,7 +465,7 @@ docker compose up --build -d app
 
 ## 11. 已完成的审计与修复
 
-旧记忆中“下一步先让 ClaudeCode 做全面检查，再让 Codex 重构前端”已经落后。仓库已经完成过一轮后端 P0/P1 审计修复和前端布局审查，随后完成了前端整体重构。
+旧计划中“下一步先做全面检查，再重构前端”已经落后。仓库已经完成过一轮后端 P0/P1 审计修复和前端布局审查，随后完成了前端整体重构。
 
 已落实的审计修复包括：
 
@@ -535,8 +535,8 @@ docker compose up --build -d app
 - 已使用 Elasticsearch、WebSocket、Spring AI、TailwindCSS、Redux、微服务、Kubernetes、对象存储或 CI/CD。
 - 前端已经有完整 E2E 测试或生产级认证安全。
 
-## 15. 建议 GPT 保存的新记忆摘要
+## 15. 项目真实性摘要
 
 下面这段适合直接作为新的长期记忆核心摘要：
 
-> Bit Forum 是林坚浩持续维护的毕业设计和 Java 后端求职项目，位于 `D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring`。截至 2026-08-02，项目使用 Java 17、Spring Boot 3.4.5、MyBatis-Plus 3.5.9、MySQL 8、Flyway、Redis 7、RabbitMQ 3、JWT/BCrypt、OpenAPI、Actuator，以及 React 19 + Vite 7 + React Router 7 + Axios 前端。后端已完成注册登录、普通/管理员权限、板块分类、文章草稿-待审-发布-驳回-下架状态机、评论、点赞与热榜、收藏与搜索、通知中心、举报治理、管理员运营看板、用户资料、公开主页、关注关系、头像/封面上传、Redis 指标定时落库、Swagger/OpenAPI 和管理员聚合健康检查。数据库由 Flyway V1-V11 管理，共 9 个主要实体表。前端已从演示页重构为有正式 URL 路由、公共站点布局、个人中心、通知中心和独立管理后台的暖色响应式社区界面，并补充基础可访问性。当前分支为 `feat/frontend-refactor`，HEAD `bfbfcce` 已推送远端；M1-M12 和前端整体重构已提交。React 的 Node 22 + Nginx Docker 镜像、Compose 前端服务、上传卷和一处文章详情 CSS 修正已在工作区实现并验证，但截至该日期尚未提交。2026-08-02 实时验证结果为 Maven 176 个测试全部通过、Vitest 4 个测试通过、Vite 生产构建通过、Compose 配置校验通过。当前高优先级不是再次从头做前端重构，而是收口 Docker/README/人工回归，并处理 RabbitMQ 幂等与补偿、HTTP 错误状态、上传真实内容校验、限流、测试隔离和前端测试覆盖。描述项目时必须区分已实现与待办；不得宣称 exactly-once、绝对不丢消息、生产流量、Elasticsearch、WebSocket、Spring AI、TailwindCSS、微服务、Kubernetes、对象存储或完整 CI/CD。
+> Bit Forum 是林坚浩持续维护的毕业设计和 Java 后端求职项目。截至 2026-08-02，项目使用 Java 17、Spring Boot 3.4.5、MyBatis-Plus 3.5.9、MySQL 8、Flyway、Redis 7、RabbitMQ 3、JWT/BCrypt、OpenAPI、Actuator，以及 React 19 + Vite 7 + React Router 7 + Axios 前端。后端已完成注册登录、普通/管理员权限、板块分类、文章草稿-待审-发布-驳回-下架状态机、评论、点赞与热榜、收藏与搜索、通知中心、举报治理、管理员运营看板、用户资料、公开主页、关注关系、头像/封面上传、Redis 指标定时落库、Swagger/OpenAPI 和管理员聚合健康检查。数据库由 Flyway V1-V11 管理，共 9 个主要实体表。前端已从演示页重构为有正式 URL 路由、公共站点布局、个人中心、通知中心和独立管理后台的暖色响应式社区界面，并补充基础可访问性。当前分支为 `feat/frontend-refactor`，HEAD `bfbfcce` 已推送远端；M1-M12 和前端整体重构已提交。React 的 Node 22 + Nginx Docker 镜像、Compose 前端服务、上传卷和一处文章详情 CSS 修正已在工作区实现并验证，但截至该日期尚未提交。2026-08-02 实时验证结果为 Maven 176 个测试全部通过、Vitest 4 个测试通过、Vite 生产构建通过、Compose 配置校验通过。当前高优先级不是再次从头做前端重构，而是收口 Docker/README/人工回归，并处理 RabbitMQ 幂等与补偿、HTTP 错误状态、上传真实内容校验、限流、测试隔离和前端测试覆盖。描述项目时必须区分已实现与待办；不得宣称 exactly-once、绝对不丢消息、生产流量、Elasticsearch、WebSocket、Spring AI、TailwindCSS、微服务、Kubernetes、对象存储或完整 CI/CD。
