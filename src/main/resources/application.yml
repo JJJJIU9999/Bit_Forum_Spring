@@ -49,6 +49,6 @@ management:
       show-details: never
       status:
         http-mapping:
-          down: 200
-          out-of-service: 200
-          unknown: 200
+          down: 503
+          out-of-service: 503
+          unknown: 503
