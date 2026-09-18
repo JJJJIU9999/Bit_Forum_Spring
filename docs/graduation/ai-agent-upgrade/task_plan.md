@@ -44,7 +44,7 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 仓库路径 | `/Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring` |
+| 仓库路径 | `/Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring` |
 | 远端 | `https://github.com/JJJJIU9999/Bit_Forum_Spring.git`（公开仓库） |
 | 接手时分支 | `main`，与 `origin/main` 完全同步（领先/落后均为 0） |
 | 接手时工作区 | 已跟踪文件**零未提交改动**；仅有 30 个未跟踪的图表产物与执行记录 |

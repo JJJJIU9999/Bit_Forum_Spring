@@ -10,7 +10,7 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 仓库 | `/Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring` |
+| 仓库 | `/Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring` |
 | 分支 | `feat/ai-agent`，**8 个提交**，工作区已跟踪文件干净 |
 | 最新提交 | `7a07b58`（本机开发脚本） |
 | 基线 | 基于 `main` 的 `d6dd582`，未 push（按策略只在 M15 完成、系统冻结两个检查点 push） |
@@ -101,7 +101,7 @@
 ### 跑测试的完整环境变量（必须显式注入，Spring Boot 不读 .env）
 
 ```bash
-cd /Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring
+cd /Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring
 export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 export SPRING_DATASOURCE_USERNAME="$(grep '^SPRING_DATASOURCE_USERNAME=' .env | cut -d= -f2 | tr -d ' \r\n\t')"
 export SPRING_DATASOURCE_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' .env | cut -d= -f2 | tr -d ' \r\n\t')"

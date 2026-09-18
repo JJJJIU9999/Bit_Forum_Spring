@@ -8,7 +8,7 @@
 
 | 项目 | 当前状态 |
 | --- | --- |
-| 仓库路径 | `/Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring` |
+| 仓库路径 | `/Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring` |
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
@@ -236,7 +236,7 @@ RabbitMQ 验证：`rabbitmq-diagnostics -q ping` → `Ping succeeded`；队列�
 
 | 问题 | 尝试 | 处理 |
 | --- | --- | --- |
-| 技能文档记录的仓库路径 `$HOME/Developer/BitFrom/spring_code/bit-forum-spring` 不存在 | 1 | 实测确认真实路径为 `/Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring`，已按真实路径作业 |
+| 技能文档记录的仓库路径 `$HOME/Developer/Projects/Java/BitFrom/bit-forum-spring` 不存在 | 1 | 实测确认真实路径为 `/Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring`，已按真实路径作业 |
 | `web_fetch` 工具对 `spring.io` / `docs.spring.io` / `raw.githubusercontent.com` 报「解析到非公网 IP」 | 1 | 改用 `curl` 抓取官方文档并用 Python 剥离 HTML 标签提取正文，成功获取全部所需原文 |
 | `spring-ai-spring-boot-dependencies` 坐标 404 | 1 | 确认该 artifact 名称不存在，改用 `spring-ai-bom` 与各 starter 的 POM 直接验证依赖关系 |
 | **redis-stack-server 模块未加载**：`MODULE LIST` 空、`FT._LIST` 报 unknown command | 1 | 根因是 `command: ["redis-server", ...]` 覆盖了镜像的 `/entrypoint.sh`（它负责 `--loadmodule`）。改用 `REDIS_ARGS` 环境变量追加参数后模块全部正常加载 |

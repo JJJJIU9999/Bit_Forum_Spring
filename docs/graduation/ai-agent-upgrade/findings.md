@@ -3,7 +3,7 @@
 > 本文记录 M13-M18 立项前的全部技术勘察证据。所有结论均来自本机实测或官方文档原文，不包含推测。
 >
 > 勘察时间：2026-09-18
-> 勘察环境：macOS（MacBook），`/Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring`
+> 勘察环境：macOS（MacBook），`/Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring`
 
 ## 一、现有项目基线实测
 
@@ -218,7 +218,7 @@ JWT_SECRET / JWT_EXPIRATION
 | 「当前分支 `feat/frontend-refactor`（基于 graduation-design）」 | 当前是 `main`，且 `feat/frontend-refactor` 成果早已合并 |
 | 「工作区包含 M1-M11 大量未提交改动，必须保留」（M12 文档） | 已跟踪文件零未提交改动 |
 | 「M1-M12 已提交；前端整体重构实现已完成且未提交」 | 前端重构已提交，`main` 已封版 |
-| 项目路径 `D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring` | 当前 MacBook 路径为 `/Users/jiu/Developer/Projects/Java/BitFrom/spring_code/bit-forum-spring` |
+| 项目路径 `D:\ClaudeCode\BitFrom\spring_code\bit-forum-spring` | 当前 MacBook 路径为 `/Users/jiu/Developer/Projects/Java/BitFrom/bit-forum-spring` |
 
 **处理**：本轮随计划书一并更正，不再让过期状态误导后续开发。
 
