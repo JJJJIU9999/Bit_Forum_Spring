@@ -44,7 +44,14 @@ spring:
         # 需要临时关闭 AI（例如演示降级链路）时，设置 DEEPSEEK_CHAT_ENABLED=false。
         enabled: ${DEEPSEEK_CHAT_ENABLED:true}
         options:
-          model: deepseek-chat
+          # 使用 deepseek-flash（DeepSeek-V4.1-Flash）。
+          # 旧模型名 deepseek-chat / deepseek-reasoner 已退役，服务端会自动映射到 flash，
+          # 这里显式写正式名称，避免依赖隐式映射。
+          #
+          # 选 flash 而非 deepseek-v4-pro 的原因：flash 价格为 pro 的约 1/4.5
+          # （输入未命中 1~2 元/百万 token vs 4.5~9 元；输出 4~8 元 vs 13.5~27 元），
+          # 且同样支持 Tool Calls 与 JSON Output，满足 M14-M17 的工具调用与结构化输出需求。
+          model: deepseek-flash
           temperature: 0.7
 jwt:
   secret: ${JWT_SECRET}

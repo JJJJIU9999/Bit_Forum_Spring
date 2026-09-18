@@ -47,4 +47,6 @@ frontend/.vite/
 .env
 .env.*
 !.env.example
+# 本机启动脚本：包含从 .env 读取凭据的逻辑，按开发者本机环境各自维护
 run-local.cmd
+run-local.sh
