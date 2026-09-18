@@ -100,7 +100,7 @@ DRAFT 草稿
 
 ## 快速启动
 
-前置要求：Docker Desktop，且本机 `80`、`8080`、`3307`、`6379`、`5672`、`15672` 端口可用。
+前置要求：Docker Desktop，且本机 `80`、`8080`、`3306`、`6379`、`5672`、`15672` 端口可用。
 
 ```powershell
 git clone https://github.com/JJJJIU9999/Bit_Forum_Spring.git
@@ -118,7 +118,7 @@ docker compose up --build -d
 | Swagger UI | `http://localhost:8080/swagger-ui.html` |
 | Actuator | `http://localhost:8080/actuator/health` |
 | RabbitMQ 管理台 | `http://localhost:15672` |
-| MySQL（宿主机） | `localhost:3307` |
+| MySQL（宿主机） | `localhost:3306` |
 
 ```powershell
 # 停止服务，保留 MySQL 和上传数据卷
@@ -129,12 +129,13 @@ docker compose down
 
 ## 本地测试与开发
 
-后端大部分 Spring 集成测试会连接 MySQL、Redis 和 RabbitMQ。可先启动三个依赖服务，再将测试进程的环境变量设为与 `.env` 一致：
+后端大部分 Spring 集成测试会连接 MySQL、Redis 和 RabbitMQ。可先启动三个依赖服务，再把测试进程的环境变量设为与 `.env` 一致。
+
+MySQL 宿主机端口为 `3306`，与 `application.yml` 的默认值一致，因此无需设置 `SPRING_DATASOURCE_URL`。
 
 ```powershell
 docker compose up -d mysql redis rabbitmq
 
-$env:SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3307/bit_forum?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8'
 $env:SPRING_DATASOURCE_USERNAME='root'
 $env:SPRING_DATASOURCE_PASSWORD='<与 MYSQL_ROOT_PASSWORD 一致>'
 $env:SPRING_RABBITMQ_USERNAME='<与 .env 一致>'
