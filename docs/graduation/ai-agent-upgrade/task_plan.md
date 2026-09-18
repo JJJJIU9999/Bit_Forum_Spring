@@ -447,12 +447,17 @@ git diff --check
 
 - [x] 引入 Spring AI 依赖（仅 DeepSeek starter；transformers 与 vector-store-redis 延后至 M15）
 - [x] 跑待验证事项 T1（Spring AI 1.1.8 + Boot 3.4.5 编译与启动）—— 通过
-- [x] 跑待验证事项 T2（M11 回归）—— 189 项测试全绿
+- [x] 跑待验证事项 T2（M11 回归）—— 211 项测试通过
 - [x] 修复引入依赖后暴露的 M11 既有测试脆弱性
-- [ ] 新增 Flyway V13 与 AI 实体 / Mapper / Service
-- [ ] 实现 `MysqlChatMemoryRepository` 与编排骨架
-- [ ] 新增 4 个对话接口与前端面板
-- [ ] 补测试并跑通全量回归
+- [x] 新增 Flyway V13 与 AI 实体 / Mapper / Service
+- [x] 实现 `MysqlChatMemoryRepository` 与编排骨架
+- [x] 新增 4 个对话接口与前端面板
+- [x] 补测试并跑通全量回归（211 项：210 通过 + 1 条件跳过）
+- [x] 真实 DeepSeek 调用验证（`DeepSeekSmokeTest`，条件执行）
+
+**M13 已完成**。实施中发现并记录的四个坑见 `findings.md` 6.4：
+`@MapperScan` 不扫子包、`@ConditionalOnBean` 在用户配置类不可靠、
+测试配置硬编码 api-key 覆盖环境变量、测试类内 bean 状态跨方法污染。
 
 ### Phase 2：M14 工具集与 Tool Calling
 

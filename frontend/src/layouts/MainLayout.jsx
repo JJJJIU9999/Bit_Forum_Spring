@@ -1,5 +1,6 @@
 import { Bell, BookOpenText, LogIn, PenLine, ShieldCheck, UserRound } from 'lucide-react'
 import { Link, NavLink } from 'react-router'
+import AiAssistantPanel from '../components/AiAssistantPanel.jsx'
 
 function MainLayout({ currentUser, unreadCount, onLogout, children }) {
   const isLoggedIn = Boolean(currentUser)
@@ -67,6 +68,9 @@ function MainLayout({ currentUser, unreadCount, onLogout, children }) {
       <footer className="site-footer">
         <p>Bit Forum · 在观点与讨论之间，留下值得回看的内容。</p>
       </footer>
+
+      {/* M13 AI 助手：仅登录用户可见，接口本身也要求登录 */}
+      {isLoggedIn && <AiAssistantPanel />}
     </div>
   )
 }

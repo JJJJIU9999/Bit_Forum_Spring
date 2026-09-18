@@ -1,0 +1,233 @@
+/* ==================== AI 助手浮动面板（M13） ====================
+   使用 variables.css 中定义的配色变量，保持与站点整体视觉一致。
+   面板固定在右下角；移动端占满宽度并抬高底部，避开移动端导航栏。 */
+
+.ai-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  color: var(--paper);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  border: 0;
+  border-radius: 999px;
+  background: var(--forest);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  transition: background .18s ease, transform .18s ease;
+}
+
+.ai-fab:hover {
+  background: var(--forest-hover);
+  transform: translateY(-1px);
+}
+
+.ai-panel {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  display: flex;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  height: 560px;
+  max-height: calc(100vh - 120px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: var(--shadow-lg);
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  color: var(--paper);
+  background: var(--forest);
+}
+
+.ai-panel-header strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+}
+
+.ai-panel-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-panel-header-actions button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--paper);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.ai-panel-header-actions button:hover {
+  background: rgba(255, 255, 255, .16);
+}
+
+.ai-conversation-list {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-soft);
+}
+
+.ai-conversation-list button {
+  flex: 0 0 auto;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 5px 10px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.ai-conversation-list button.is-active {
+  color: var(--paper);
+  border-color: var(--forest);
+  background: var(--forest);
+}
+
+.ai-panel-body {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--paper);
+}
+
+.ai-empty {
+  padding: 18px 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: var(--line-height-base);
+}
+
+.ai-empty-hint {
+  margin-top: 6px;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.ai-message {
+  max-width: 86%;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: var(--line-height-base);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: var(--radius-sm);
+}
+
+.ai-message-user {
+  margin-left: auto;
+  color: var(--paper);
+  background: var(--forest);
+}
+
+.ai-message-assistant {
+  color: var(--ink);
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+}
+
+.ai-typing {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.ai-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  color: var(--terracotta);
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--terracotta-soft);
+}
+
+.ai-panel-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--paper-soft);
+}
+
+.ai-panel-footer input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.ai-panel-footer input:focus {
+  outline: 2px solid var(--forest-soft);
+  border-color: var(--forest);
+}
+
+.ai-panel-footer button {
+  display: grid;
+  width: 38px;
+  place-items: center;
+  color: var(--paper);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--forest);
+  cursor: pointer;
+}
+
+.ai-panel-footer button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* 移动端：面板铺满可用宽度，并避开底部导航栏 */
+@media (max-width: 640px) {
+  .ai-panel {
+    right: 8px;
+    bottom: 72px;
+    left: 8px;
+    width: auto;
+    height: 460px;
+    max-height: calc(100vh - 160px);
+  }
+
+  .ai-fab {
+    right: 14px;
+    bottom: 74px;
+    padding: 11px 14px;
+  }
+
+  .ai-fab span {
+    display: none;
+  }
+}

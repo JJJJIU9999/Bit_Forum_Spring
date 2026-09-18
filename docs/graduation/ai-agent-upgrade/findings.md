@@ -847,6 +847,111 @@ javap -c -p DeepSeekChatAutoConfiguration
 再用 `eq()` 把打桩精确限定到测试创建的文章，使断言不再依赖数据库初始状态。
 修复后 `mvn test` 189 项全绿。
 
+### 6.4 M13 实施中发现的四个坑（M14+ 必须知道）
+
+#### 坑 1：`@MapperScan` 不扫描子包
+
+`BitForumSpringApplication` 上原本是 `@MapperScan("com.bitforum.mapper")`。
+AI 域的 Mapper 放在 `com.bitforum.ai.mapper` 子包下，**不会被扫描到**，表现为
+`No qualifying bean of type 'AiMessageMapper' available`，Spring 上下文启动失败。
+
+**修复**：显式列出两个包
+
+```java
+@MapperScan({"com.bitforum.mapper", "com.bitforum.ai.mapper"})
+```
+
+#### 坑 2：`@ConditionalOnBean` 在用户配置类中不可靠
+
+最初 `AiConfig` 用 `@ConditionalOnBean(DeepSeekChatModel.class)` 决定是否创建 ChatClient。
+实测出现"`DeepSeekChatModel` bean 存在、但 `ChatClient` 未被创建"：
+用户配置类处理时，自动配置的 bean 定义可能尚未注册，条件评估失败且**无任何警告**。
+
+**修复**：改用属性条件，不依赖 bean 注册顺序
+
+```java
+@Bean
+@ConditionalOnProperty(name = "spring.ai.deepseek.chat.enabled", havingValue = "true")
+public ChatClient chatClient(DeepSeekChatModel deepSeekChatModel) { ... }
+```
+
+#### 坑 3：测试配置硬编码 api-key 会覆盖环境变量的真实 Key
+
+这是最隐蔽的一个，只有真实调用才会暴露。现象：真实 Key 经 curl 验证有效（HTTP 200），
+但应用调用返回 **HTTP 401 Authentication Fails, Your api key: ****alls is invalid**。
+
+诊断输出（对比 Key 的形状而非内容，输出中已对真实 Key 脱敏）：
+
+```text
+>>> 环境变量 DEEPSEEK_API_KEY   = 长度 35, 首6=sk-***, 尾4=****   ← 真实 Key（形状正确）
+>>> spring.ai.deepseek.api-key  = 长度 44, 首6=test-p, 尾4=alls    ← 被占位符覆盖
+>>> DeepSeekConnectionProperties.apiKey = 长度 44, 首6=test-p, 尾4=alls
+```
+
+`test-placeholder-key-not-used-for-real-calls` 恰好 44 字符、尾 4 位 `alls`，
+与 DeepSeek 报错中的 `****alls` 完全吻合，据此定位。
+
+真实 Key 的任何片段都不应写入仓库文档；上述诊断只需长度与占位符特征即可定位问题。
+
+**根因**：`src/test/resources/application.yml` 中把 `api-key` 写成了硬编码字符串，
+其优先级高于环境变量，把真实 Key 覆盖掉了。
+
+**修复**：改成带默认值的占位符，让环境变量优先
+
+```yaml
+api-key: ${DEEPSEEK_API_KEY:test-placeholder-key-not-used-for-real-calls}
+```
+
+**通用教训**：测试配置里凡是要被环境变量覆盖的值，都必须写成占位符形式，
+不能写死字面量，否则会静默屏蔽外部传入的真实配置。
+
+#### 坑 4：同一个测试类的多个方法共用 Spring 上下文与 bean 实例
+
+`AgentOrchestratorTest` 中的测试 Agent 是有状态的（记录调用次数与最近一次回答）。
+初始未重置状态，导致：调用计数跨方法累加到 3、上一轮设置的降级回答残留到下一个测试。
+
+**修复**：显式重置
+
+```java
+@BeforeEach
+void resetTestAgent() {
+    testRoutingAgent.reset();
+}
+```
+
+#### 附带发现：测试用 Agent 不要用 Mockito mock
+
+`AgentOrchestrator` 在**构造阶段**就读取每个 Agent 的 `type()` 建立路由表，
+而 `@MockitoBean` 的打桩在该时点尚未生效，`type()` 返回 `null`，
+导致 Agent 被跳过、路由表为空（表现为运行时报"没有任何可用的 Agent 实现"）。
+改用真实实现类（`type()` 硬编码）即可，与打桩时序无关。
+
+**顺手加固**：`AgentOrchestrator` 现在会显式跳过 `type()` 为 null 的实现并打警告，
+避免这类实现错误变成静默失效。
+
+### 6.5 M13 真实链路验证（mock 测试覆盖不到的部分）
+
+新增 `DeepSeekSmokeTest`，默认跳过，仅在 `DEEPSEEK_CHAT_ENABLED=true` 时执行：
+
+```bash
+export DEEPSEEK_CHAT_ENABLED=true
+export DEEPSEEK_API_KEY="$(grep '^DEEPSEEK_API_KEY=' .env | cut -d= -f2-)"
+./mvnw -Dtest=DeepSeekSmokeTest test
+```
+
+**验证结果**：通过。确认了 ChatClient 装配、API Key 生效、网络可达、模型能返回内容。
+
+**辅助排查手段**：用 curl 直连官方端点可快速区分"Key 问题"与"应用配置问题"
+
+```bash
+curl -s https://api.deepseek.com/models -H "Authorization: Bearer $DEEPSEEK_API_KEY"
+# 200 + 模型列表 => Key 有效，问题在应用侧
+```
+
+**顺带发现**：当前 Key 可访问的模型为 `deepseek-flash` 与 `deepseek-v4-pro`。
+默认 `deepseek-chat` 调用能成功（服务端实际返回 `deepseek-flash`），
+M14-M16 如需指定模型，应以 `/models` 返回的 id 为准。
+
 ---
 
 ## 七、风险记录

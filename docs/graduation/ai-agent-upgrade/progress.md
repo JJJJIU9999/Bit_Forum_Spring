@@ -12,14 +12,15 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **Phase 1（M13）进行中**：依赖与兼容性验证已完成 |
-| 最新 Flyway 迁移 | `V12__add_notification_source_message.sql`（AI 模块将新增 V13-V19） |
-| 模块完成度 | M13 进行中（Spring AI 依赖接入与 T1/T2 验证已完成）；M14-M18 未开始 |
-| 当前主线 | **M13 AI 基础设施与对话骨架** |
+| 当前阶段 | **M13 已完成**（对话骨架 + 持久化 + 接口 + 前端面板 + 真实调用验证） |
+| 最新 Flyway 迁移 | **V13__add_ai_conversation.sql**（已应用，schema v13） |
+| 模块完成度 | M13 已完成；M14-M18 未开始 |
+| 当前主线 | M13 收尾；下一步 M14 工具集与 Tool Calling |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
-| 数据库状态 | MySQL 8.0.46，`bit_forum` 库存在，Flyway V1-V12 全部 success |
-| 测试状态 | **189 项全绿**（引入 Spring AI 后新基线，原 176 项 + 13 项） |
-| 待办 | M13 剩余：Flyway V13、AI 实体/Mapper/Service、对话接口、前端面板 |
+| 数据库状态 | MySQL 8.0.46，Flyway V1-V13 全部 success |
+| 测试状态 | **211 项：210 通过 + 1 项条件跳过**（真实 DeepSeek 冒烟测试默认跳过） |
+| 真实调用验证 | 已通过（`DEEPSEEK_CHAT_ENABLED=true` 时实际调用 DeepSeek 成功） |
+| 待办 | M14：10 个 `@Tool` 工具类、ToolRegistry、AgentRouter |
 
 ## 总体进度
 
@@ -27,7 +28,7 @@
 | --- | --- | --- | --- | --- |
 | Prep | AI Agent 升级计划书 | 已完成 | 计划书、勘察证据、进度记录已落盘 | `docs/graduation/ai-agent-upgrade/` |
 | Prep | 前置环境（Redis Stack 替换 + Key 配置 + 中间件启动） | 已完成 | 三容器 healthy；RediSearch 2.10.20 已加载；向量检索端到端验证通过 | `findings.md` 第五节 |
-| M13 | AI 基础设施与对话骨架 | **进行中** | Spring AI 依赖接入完成；T1/T2 验证通过，189 项测试全绿 | 本文 |
+| M13 | AI 基础设施与对话骨架 | **已完成** | 211 项测试（210 通过 + 1 跳过）；真实 DeepSeek 调用验证通过 | 本文 |
 | M14 | 工具集与 Tool Calling | 未开始 | — | 待创建 |
 | M15 | RAG 知识库与向量检索 | 未开始 | — | 待创建 |
 | M16 | 内容审核 Agent | 未开始 | — | 待创建 |
@@ -346,22 +347,103 @@ docker compose up -d mysql redis rabbitmq
 **说明**：这 2 项失败此前被"测试库为空"掩盖。本次修复让测试在真实有数据的库上也能稳定通过，
 属于顺带修好的既有缺陷，不是 M13 引入的问题。
 
-### M13 剩余待办
+### M13-3 ~ M13-7：对话骨架实现与验证
 
-- [ ] Flyway V13：`ai_conversation`、`ai_message`
-- [ ] AI 域实体 / Mapper / Service
-- [ ] `MysqlChatMemoryRepository`
-- [ ] `AgentOrchestrator` + `Agent` 接口骨架
-- [ ] 4 个对话接口 + `WebMvcConfig` 拦截器路径
-- [ ] 前端 `AiAssistantPanel.jsx` + `aiApi.js`
-- [ ] 补测试并跑全量回归
+- **Status:** complete
 
-### M13 本轮修改文件
+#### 数据库
+
+新增 Flyway `V13__add_ai_conversation.sql`（未修改历史迁移 V1-V12）：
+
+| 表 | 用途 |
+| --- | --- |
+| `ai_conversation` | AI 会话：user_id、title、agent_type、message_count、total_tokens |
+| `ai_message` | AI 消息：role、content、tool_calls、retrieved_doc_ids、Token 统计、latency_ms |
+
+实测迁移记录：`Migrating schema bit_forum to version "13 - add ai conversation"` → `Successfully applied 1 migration`。
+
+#### 后端新增类
+
+| 层 | 类 | 说明 |
+| --- | --- | --- |
+| entity | `AiConversation`、`AiMessage` | MyBatis-Plus 实体 |
+| mapper | `AiConversationMapper`、`AiMessageMapper` | 基础 Mapper |
+| memory | `MysqlChatMemoryRepository` | 实现 Spring AI `ChatMemoryRepository`，会话记忆落库 |
+| service | `AiConversationService` | 会话/消息读写、归属校验、标题生成 |
+| agent | `Agent`、`AgentContext`、`AgentResponse`、`AgentType`、`QaAgent` | Agent 抽象与问答助手实现 |
+| orchestrator | `AgentOrchestrator` | 历史加载 → 路由 → 持久化 → 统计更新 |
+| config | `AiConfig` | `ChatClient` 装配 |
+| dto | `AiConversationResponse`、`AiMessageResponse`、`AiConversationCreateRequest`、`AiChatRequest` | 接口出入参 |
+| controller | `AiController` | 4 个对话接口 |
+
+同时修改 `BitForumSpringApplication`（`@MapperScan` 增加 AI 域包）与 `WebMvcConfig`（`/api/ai/**` 接入 `LoginInterceptor`）。
+
+新增接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/ai/conversations` | 新建会话 |
+| `GET` | `/api/ai/conversations` | 我的会话列表 |
+| `POST` | `/api/ai/conversations/{id}/messages` | 发送消息并获取回答 |
+| `GET` | `/api/ai/conversations/{id}/messages` | 会话消息历史 |
+
+#### 前端
+
+| 文件 | 变更 |
+| --- | --- |
+| `src/api/aiApi.js` | 新增，4 个接口封装；AI 请求单独放宽超时到 60s |
+| `src/components/AiAssistantPanel.jsx` | 新增，右下角浮动面板（会话列表、消息流、发送、错误与加载态） |
+| `src/styles/ai-panel.css` | 新增，使用项目既有 CSS 变量；移动端避开底部导航 |
+| `src/layouts/MainLayout.jsx` | 引入面板，仅登录用户渲染 |
+| `src/main.jsx` | 引入 ai-panel.css |
+
+#### 测试
+
+| 测试类 | 项数 | 覆盖内容 |
+| --- | --- | --- |
+| `MysqlChatMemoryRepositoryTest` | 4 | 消息持久化与顺序还原、toolCalls 还原、未知会话容错、按会话删除隔离 |
+| `AiControllerTest` | 9 | 三个接口的登录拦截、创建/列表/发消息/历史、空消息与超长消息校验 |
+| `AgentOrchestratorTest` | 8 | 消息落库、历史传递、按类型路由、统计更新、标题生成、403/404、降级回答落库 |
+| `DeepSeekSmokeTest` | 1 | 真实 DeepSeek 调用（默认跳过，条件执行） |
+
+#### 验证结果
+
+| 命令 | 结果 |
+| --- | --- |
+| `mvn test` | **Tests run: 211, Failures: 0, Errors: 0, Skipped: 1**，BUILD SUCCESS |
+| `mvn -Dtest=DeepSeekSmokeTest test`（`DEEPSEEK_CHAT_ENABLED=true`） | 通过，真实调用 DeepSeek 成功 |
+| `npm run build` | 通过，Vite 构建 1887 个模块 |
+| `npm test` | 通过，4 项 |
+| `git diff --check` | 通过 |
+
+#### 未完成的手工验证
+
+前端面板的**浏览器交互**尚未人工验证（需启动前后端后在页面点击确认）。
+已完成的验证是构建通过、逻辑经后端接口测试覆盖。
+
+### M13 修改/新增文件汇总
 
 | 文件 | 变更 |
 | --- | --- |
 | `pom.xml` | 新增 spring-ai BOM 与 DeepSeek starter |
-| `src/main/resources/application.yml` | 新增 `spring.ai.deepseek.*` 配置块 |
-| `src/test/resources/application.yml` | 新增占位 api-key |
-| `src/test/java/com/bitforum/service/ArticleMetricSyncServiceTest.java` | 修复脆弱假设，新增 `stubNoRedisDataForExistingArticles` 辅助方法 |
 | `mvnw` | 补执行权限（chmod +x） |
+| `src/main/resources/application.yml` | 新增 `spring.ai.deepseek.*` 配置块 |
+| `src/test/resources/application.yml` | api-key 改为占位符形式（避免覆盖环境变量）+ enabled 开关 |
+| `src/main/resources/db/migration/V13__add_ai_conversation.sql` | 新增 AI 会话与消息表 |
+| `src/main/java/com/bitforum/BitForumSpringApplication.java` | `@MapperScan` 增加 `com.bitforum.ai.mapper` |
+| `src/main/java/com/bitforum/config/WebMvcConfig.java` | `/api/ai/**` 接入登录拦截器 |
+| `src/main/java/com/bitforum/ai/**`（18 个文件） | entity / mapper / memory / service / agent / orchestrator / config / dto / controller |
+| `src/test/java/com/bitforum/service/ArticleMetricSyncServiceTest.java` | 修复脆弱假设（M11 顺带修复） |
+| `src/test/java/com/bitforum/ai/**`（4 个测试类） | 21 项 AI 测试 |
+| `frontend/src/api/aiApi.js` | 新增 |
+| `frontend/src/components/AiAssistantPanel.jsx` | 新增 |
+| `frontend/src/styles/ai-panel.css` | 新增 |
+| `frontend/src/layouts/MainLayout.jsx` | 引入面板 |
+| `frontend/src/main.jsx` | 引入样式 |
+
+### 下一步：M14 工具集与 Tool Calling
+
+- 实现 10 个 `@Tool` 工具类，复用现有 Service
+- 实现 `ToolRegistry`（按 Agent 装配工具子集）与 `AgentRouter`
+- 记录工具调用冒烟会话到 `scripts/agent-tool-smoke.md`
+- 注意：`AgentResponse` 已预留 Token 字段；`AgentContext` 已预留工具注册扩展点

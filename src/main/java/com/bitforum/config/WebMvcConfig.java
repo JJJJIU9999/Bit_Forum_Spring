@@ -46,7 +46,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/users/*/follow",
                         "/api/upload/avatar",
                         "/api/upload/article-cover",
-                        "/api/comment/publish"
+                        "/api/comment/publish",
+                        // M13 起：AI 助手全部接口都要求登录，
+                        // 会话归属校验在 AiConversationService 内完成（越权返回 403）
+                        "/api/ai/conversations",
+                        "/api/ai/conversations/**"
                 );   
     }
 
