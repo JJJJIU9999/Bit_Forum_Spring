@@ -34,10 +34,10 @@
   bottom: 22px;
   z-index: 40;
   display: flex;
-  width: 400px;
+  width: 560px;
   max-width: calc(100vw - 32px);
-  height: 560px;
-  max-height: calc(100vh - 120px);
+  /* 用 min() 保证小屏笔记本上不超出视口，避免面板底部被裁掉 */
+  height: min(640px, calc(100vh - 140px));
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -331,15 +331,14 @@
   cursor: not-allowed;
 }
 
-/* 移动端：面板铺满可用宽度，并避开底部导航栏 */
-@media (max-width: 640px) {
+/* 窄屏：面板铺满可用宽度，并避开底部导航栏 */
+@media (max-width: 720px) {
   .ai-panel {
     right: 8px;
     bottom: 72px;
     left: 8px;
     width: auto;
-    height: 460px;
-    max-height: calc(100vh - 160px);
+    height: min(460px, calc(100vh - 160px));
   }
 
   .ai-fab {
