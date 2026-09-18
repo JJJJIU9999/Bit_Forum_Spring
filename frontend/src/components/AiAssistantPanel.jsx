@@ -6,6 +6,7 @@ import {
   listMessages,
   sendMessage,
 } from '../api/aiApi.js'
+import MarkdownText from './MarkdownText.jsx'
 
 // AI 助手浮动面板（M13）。
 // 仅在用户登录后渲染；对话历史由后端持久化，刷新页面后仍然保留。
@@ -158,7 +159,12 @@ function AiAssistantPanel() {
 
         {messages.map((message) => (
           <div key={message.id} className={`ai-message ai-message-${message.role}`}>
-            {message.content}
+            {/* 助手回答是 Markdown，需要渲染；用户输入按纯文本显示，避免被当作语法解析 */}
+            {message.role === 'assistant' ? (
+              <MarkdownText content={message.content} />
+            ) : (
+              message.content
+            )}
           </div>
         ))}
 

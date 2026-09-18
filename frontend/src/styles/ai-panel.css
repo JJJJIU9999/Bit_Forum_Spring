@@ -161,6 +161,127 @@
   font-style: italic;
 }
 
+/* ==================== 助手回答的 Markdown 渲染 ====================
+   模型会输出表格、列表、加粗等语法；不渲染时会显示成带 | 和 ** 的源码。
+   聊天气泡只有 400px 宽，所以表格用容器横向滚动而不是压缩字距。 */
+
+.md-content {
+  /* 容器宽度固定，内部用 border-box，避免表格与代码块的 padding 撑出气泡 */
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.md-content > *:first-child {
+  margin-top: 0;
+}
+
+.md-content > *:last-child {
+  margin-bottom: 0;
+}
+
+.md-content p {
+  margin: 0 0 8px;
+}
+
+.md-content h3,
+.md-content h4,
+.md-content h5,
+.md-content h6 {
+  margin: 12px 0 6px;
+  color: var(--forest);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.md-content strong {
+  color: var(--forest);
+  font-weight: 800;
+}
+
+.md-content ul,
+.md-content ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.md-content li {
+  margin-bottom: 3px;
+}
+
+.md-content code {
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  border-radius: 4px;
+  background: #e8efe9;
+}
+
+.md-content pre {
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: #1f2a24;
+}
+
+.md-content pre code {
+  padding: 0;
+  color: #e6efe8;
+  background: transparent;
+}
+
+.md-table-wrap {
+  max-width: 100%;
+  margin: 0 0 8px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.md-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.md-content th,
+.md-content td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-content th {
+  color: var(--forest);
+  font-weight: 800;
+  background: var(--forest-soft);
+}
+
+.md-content tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.md-content blockquote {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  color: var(--ink-soft);
+  border-left: 3px solid var(--line-strong);
+  background: rgba(0, 0, 0, .02);
+}
+
+.md-content hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.md-content a {
+  color: var(--terracotta);
+  text-decoration: underline;
+}
+
 .ai-error {
   margin-top: 8px;
   padding: 8px 10px;
