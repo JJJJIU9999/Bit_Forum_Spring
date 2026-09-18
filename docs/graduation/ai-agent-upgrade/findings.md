@@ -746,14 +746,106 @@ SPRING_DATASOURCE_PASSWORD=... SPRING_RABBITMQ_PASSWORD=... JWT_SECRET=... mvn t
 
 | 编号 | 待验证内容 | 计划验证时机 | 当前状态 |
 | --- | --- | --- | --- |
-| T1 | Spring AI 1.1.8 在 Spring Boot 3.4.5 下真实启动无冲突 | M13 引入依赖后立即验证 | 待验证 |
-| T2 | Redis Stack 替换后现有 `RedisService` 全部功能正常 | M13 换镜像后跑 M11 相关测试回归 | **基础命令已通过**（见 5.5），完整回归待 `mvn test` |
+| T1 | Spring AI 1.1.8 在 Spring Boot 3.4.5 下真实启动无冲突 | M13 引入依赖后立即验证 | **已验证通过**（编译成功 + 189 项测试全绿） |
+| T2 | Redis Stack 替换后现有 `RedisService` 全部功能正常 | M13 换镜像后跑 M11 相关测试回归 | **已验证通过**（`mvn test` 189 项全绿，含 M11） |
 | T3 | ONNX 嵌入模型能成功加载并返回向量 | M15 开始前的最小验证 | 待验证 |
 | T4 | DeepSeek Tool Calling 实际可用且有稳定的调用成功率 | M14 工具冒烟测试 | 待验证 |
 | T5 | `RedisVectorStore` 元数据过滤在实际数据上生效 | M15 检索验证 | **原生命令已验证**（见 5.4），Spring AI 封装层待验证 |
 | T6 | 单轮对话的真实 Token 消耗与费用 | M13 结束后首次统计 | 待验证 |
 | T7 | 结构化输出在 DeepSeek 上的稳定性 | M16 审核 Agent 验证 | 待验证 |
 | T8 | 异步索引队列与既有 `ArticlePublishMessage` 队列不冲突 | M15 接入 RabbitMQ 时验证 | 待验证 |
+
+### 6.1 T1/T2 验证执行记录（2026-09-18）
+
+```bash
+# 编译（验证依赖解析与 Spring Boot 3.4.5 兼容性）
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw -s maven-settings.xml -DskipTests compile
+# 退出码 0
+
+# 完整测试回归
+JAVA_HOME=$(/usr/libexec/java_home -v 17) \
+SPRING_DATASOURCE_USERNAME=root SPRING_DATASOURCE_PASSWORD=... \
+SPRING_RABBITMQ_USERNAME=... SPRING_RABBITMQ_PASSWORD=... \
+JWT_SECRET=... ./mvnw -s maven-settings.xml test
+# Tests run: 189, Failures: 0, Errors: 0, Skipped: 0
+# BUILD SUCCESS
+```
+
+依赖树确认（Spring AI 1.1.8 构件全部解析成功）：
+
+```text
+spring-ai-starter-model-deepseek:1.1.8
+├── spring-ai-autoconfigure-model-deepseek:1.1.8
+│   ├── spring-ai-autoconfigure-model-tool:1.1.8
+│   ├── spring-ai-autoconfigure-retry:1.1.8
+│   └── spring-ai-autoconfigure-model-chat-observation:1.1.8
+├── spring-ai-deepseek:1.1.8
+│   ├── spring-ai-model:1.1.8
+│   │   ├── spring-ai-commons:1.1.8
+│   │   └── spring-ai-template-st:1.1.8
+│   └── spring-ai-retry:1.1.8
+└── spring-ai-autoconfigure-model-chat-client:1.1.8
+    └── spring-ai-client-chat:1.1.8
+```
+
+**结论**：T1、T2 均通过。不存在 Spring AI 与 Spring Boot 3.4.5 的冲突；Redis Stack 替换未破坏任何既有功能。
+
+### 6.2 DeepSeek 自动配置的重要发现（M14+ 必须知道）
+
+**`spring.ai.deepseek.chat.enabled` 不是控制 bean 创建的总开关。**
+
+实测证据：
+
+```bash
+# 自动配置条件元数据：DeepSeekChatAutoConfiguration 只有 @ConditionalOnClass
+cat META-INF/spring-autoconfigure-metadata.properties
+# ...DeepSeekChatAutoConfiguration.ConditionalOnClass=org.springframework.ai.deepseek.api.DeepSeekApi
+
+# 反编译确认：deepSeekChatModel() 方法上没有 @ConditionalOnProperty
+javap -c -p DeepSeekChatAutoConfiguration
+#   public DeepSeekChatModel deepSeekChatModel(...)   ← 无条件创建
+#   private DeepSeekApi deepSeekApi(...)              ← 内部 Assert.hasText 校验 api-key
+```
+
+**表现**：只要 `spring-ai-starter-model-deepseek` 在类路径上，自动配置就会无条件创建
+`deepSeekChatModel` bean；api-key 为空时抛
+`IllegalArgumentException: DeepSeek API key must be set`，应用启动失败。
+设置 `spring.ai.deepseek.chat.enabled: false` **无法阻止**该 bean 创建。
+
+**应对策略**：
+
+1. 测试环境在 `src/test/resources/application.yml` 提供占位 api-key，使 Spring 上下文能启动。
+   测试不进行真实网络调用；需要验证 AI 逻辑时应使用 Spring AI 的 Mock 聊天模型。
+2. 生产/开发环境 api-key 缺失会启动失败，与 datasource / rabbitmq / jwt 的既有约定一致
+   （必需凭据缺失即快速失败），避免"看似启动成功、调用时才报错"。
+3. 真正的"AI 不可用降级"应在调用层实现（M18 的 `AiDegradeGuard`），而不是依赖 starter 开关。
+
+### 6.3 M11 既有测试脆弱性修复（Redis 换镜像后暴露）
+
+替换 Redis 镜像并引入 Spring AI 后，`ArticleMetricSyncServiceTest` 有 2 个测试失败。
+**深入排查确认这不是 Redis Stack 或 Spring AI 造成的回归，而是既有测试本身的脆弱假设**：
+
+| 脆弱假设 | 真实现象 |
+| --- | --- |
+| 认为"数据库中只有本测试创建的已发布文章" | 实际库中有 4 篇历史 PUBLISHED 文章，`syncArticleMetrics()` 遍历全库 |
+| 认为"Mockito 对未打桩方法返回 null" | **Mockito 对 `Long` 返回类型默认返回 `0L` 而非 `null`** |
+
+诊断证据：
+
+```text
+>>> DIAG 已发布文章数 = 4
+>>> DIAG 对 articleId=85 打桩返回 999
+>>> DIAG articleId=85 (viewCount=130) -> mock views=999, mock likes=0     ← 打桩生效
+>>> DIAG articleId=86 (viewCount=87)  -> mock views=0,   mock likes=0     ← 未打桩返回 0L！
+>>> DIAG 未打桩的 articleId=999999999 -> 0                                ← 不是 null
+```
+
+由于 `syncSingleArticle` 用 `null` 表示"Redis 无该指标"，返回 `0L` 会被判定为
+"指标值为 0"，导致 4 篇无关文章被更新，`updatedCount` 从期望的 1 变成 5。
+
+**修复方式**：先用 `lenient()` 显式声明"库中已有已发布文章在 Redis 中无数据"，
+再用 `eq()` 把打桩精确限定到测试创建的文章，使断言不再依赖数据库初始状态。
+修复后 `mvn test` 189 项全绿。
 
 ---
 

@@ -12,13 +12,14 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | Phase 0 已完成；前置环境已就绪 |
+| 当前阶段 | **Phase 1（M13）进行中**：依赖与兼容性验证已完成 |
 | 最新 Flyway 迁移 | `V12__add_notification_source_message.sql`（AI 模块将新增 V13-V19） |
-| 模块完成度 | M13-M18 全部未开始 |
-| 当前主线 | **前置环境已就绪，可进入 M13** |
+| 模块完成度 | M13 进行中（Spring AI 依赖接入与 T1/T2 验证已完成）；M14-M18 未开始 |
+| 当前主线 | **M13 AI 基础设施与对话骨架** |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
 | 数据库状态 | MySQL 8.0.46，`bit_forum` 库存在，Flyway V1-V12 全部 success |
-| 待办 | 无（Key 已填写、端口已改回 3306、中间件已就绪） |
+| 测试状态 | **189 项全绿**（引入 Spring AI 后新基线，原 176 项 + 13 项） |
+| 待办 | M13 剩余：Flyway V13、AI 实体/Mapper/Service、对话接口、前端面板 |
 
 ## 总体进度
 
@@ -26,7 +27,7 @@
 | --- | --- | --- | --- | --- |
 | Prep | AI Agent 升级计划书 | 已完成 | 计划书、勘察证据、进度记录已落盘 | `docs/graduation/ai-agent-upgrade/` |
 | Prep | 前置环境（Redis Stack 替换 + Key 配置 + 中间件启动） | 已完成 | 三容器 healthy；RediSearch 2.10.20 已加载；向量检索端到端验证通过 | `findings.md` 第五节 |
-| M13 | AI 基础设施与对话骨架 | 未开始 | — | 待创建 |
+| M13 | AI 基础设施与对话骨架 | **进行中** | Spring AI 依赖接入完成；T1/T2 验证通过，189 项测试全绿 | 本文 |
 | M14 | 工具集与 Tool Calling | 未开始 | — | 待创建 |
 | M15 | RAG 知识库与向量检索 | 未开始 | — | 待创建 |
 | M16 | 内容审核 Agent | 未开始 | — | 待创建 |
@@ -272,4 +273,95 @@ docker compose up -d mysql redis rabbitmq
 - **不要逐模块 push**；按策略只在 M15 完成与系统冻结两个检查点 push。
 - **不要 `git add .`**；只暂存计划内文件。
 - 描述项目能力时必须区分「已实现」与「规划中」，不得虚构评估数据、性能或效果。
-- ONNX 嵌入模型与 Redis Stack 替换是本计划两个尚未实测的技术点，M13/M15 开始前必须先做最小验证。
+- ONNX 嵌入模型是本计划尚未实测的技术点，M15 开始前必须先做最小验证。
+
+---
+
+## M13 执行记录（2026-09-18）
+
+### M13-1：引入 Spring AI 依赖并验证 T1
+
+- **Status:** complete
+
+#### 范围收窄决策
+
+计划书原本要求 M13 引入 4 个 starter。实施时收窄为**只引入 DeepSeek**，理由：
+
+| 依赖 | M13 是否引入 | 原因 |
+| --- | --- | --- |
+| `spring-ai-starter-model-deepseek` | ✅ 引入 | M13 对话骨架的核心依赖 |
+| `spring-ai-starter-model-transformers` | ❌ 延后至 M15 | M13 没有 EmbeddingModel 用途；提前引入会让 ONNX 模型在启动阶段就被要求加载，平白增加 M13 失败面 |
+| `spring-ai-starter-vector-store-redis` | ❌ 延后至 M15 | 向量库 M15 才使用 |
+| `spring-ai-starter-model-ollama` | ❌ 延后至 M18 | 降级能力 M18 才实现 |
+
+**pom.xml 变更**：
+
+- `properties` 新增 `<spring-ai.version>1.1.8</spring-ai.version>`
+- 新增 `dependencyManagement` 导入 `spring-ai-bom:1.1.8`
+- `dependencies` 新增 `spring-ai-starter-model-deepseek`（版本由 BOM 管理）
+- 用注释标明 M15 需补充的两个 starter
+
+#### 配置变更
+
+`src/main/resources/application.yml` 新增 `spring.ai.deepseek.*`：
+
+- `api-key: ${DEEPSEEK_API_KEY:}` — 只从环境变量读取，不写死
+- `chat.enabled: ${DEEPSEEK_CHAT_ENABLED:true}` — 与 datasource / rabbitmq / jwt 约定一致：必需凭据缺失即启动失败
+- `chat.options.model: deepseek-chat`、`temperature: 0.7`
+
+`src/test/resources/application.yml` 新增占位 api-key（原因见 findings.md 6.2）。
+
+#### 验证结果
+
+| 命令 | 结果 |
+| --- | --- |
+| `./mvnw -s maven-settings.xml -DskipTests compile`（JDK 17） | 退出码 0 |
+| `./mvnw dependency:tree \| grep spring-ai` | 8 个 Spring AI 构件全部解析为 1.1.8 |
+| `./mvnw -s maven-settings.xml test` | **Tests run: 189, Failures: 0, Errors: 0** |
+
+**T1 通过**：Spring AI 1.1.8 与 Spring Boot 3.4.5 无冲突。**T2 通过**：Redis Stack 替换未破坏既有功能。
+
+#### 工具链环境说明（MacBook）
+
+- 本机无 `mvn` 命令，必须使用项目自带的 `./mvnw`（Maven 3.9.16）
+- 本机有两个 JDK：默认 25、另有 17。项目要求 Java 17，需显式指定：
+  `export JAVA_HOME=$(/usr/libexec/java_home -v 17)`
+- `mvnw` 原本没有执行权限，已 `chmod +x`
+- Maven 仓库在 `~/.m2`（会话工作区之外）；沙箱为 workspace-write 时会被拒绝写入，
+  需要 danger-full-access 策略才能编译/测试
+
+### M13-2：修复引入依赖后暴露的既有测试脆弱性
+
+- **Status:** complete
+
+`ArticleMetricSyncServiceTest` 有 2 项失败。经诊断确认**不是 Redis Stack 或 Spring AI 造成的回归**，
+而是既有测试本身的脆弱假设（详见 findings.md 6.3）：
+
+1. 假设"数据库中只有本测试创建的已发布文章"，实际库中有 4 篇历史 PUBLISHED 文章
+2. 假设"Mockito 对未打桩方法返回 null"，实际 **Mockito 对 `Long` 返回类型默认返回 `0L`**
+
+修复方式：`lenient()` 显式声明库中已有文章在 Redis 中无数据 + `eq()` 精确限定打桩范围，
+使断言不再依赖数据库初始状态。修复后 189 项全绿。
+
+**说明**：这 2 项失败此前被"测试库为空"掩盖。本次修复让测试在真实有数据的库上也能稳定通过，
+属于顺带修好的既有缺陷，不是 M13 引入的问题。
+
+### M13 剩余待办
+
+- [ ] Flyway V13：`ai_conversation`、`ai_message`
+- [ ] AI 域实体 / Mapper / Service
+- [ ] `MysqlChatMemoryRepository`
+- [ ] `AgentOrchestrator` + `Agent` 接口骨架
+- [ ] 4 个对话接口 + `WebMvcConfig` 拦截器路径
+- [ ] 前端 `AiAssistantPanel.jsx` + `aiApi.js`
+- [ ] 补测试并跑全量回归
+
+### M13 本轮修改文件
+
+| 文件 | 变更 |
+| --- | --- |
+| `pom.xml` | 新增 spring-ai BOM 与 DeepSeek starter |
+| `src/main/resources/application.yml` | 新增 `spring.ai.deepseek.*` 配置块 |
+| `src/test/resources/application.yml` | 新增占位 api-key |
+| `src/test/java/com/bitforum/service/ArticleMetricSyncServiceTest.java` | 修复脆弱假设，新增 `stubNoRedisDataForExistingArticles` 辅助方法 |
+| `mvnw` | 补执行权限（chmod +x） |

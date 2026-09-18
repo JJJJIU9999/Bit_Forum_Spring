@@ -440,12 +440,15 @@ git diff --check
 - [x] 配置 `DEEPSEEK_API_KEY`（`.env.example` 模板 + `.env` 实际值 + compose 透传）
 - [x] 拉起 MySQL / Redis Stack / RabbitMQ 三容器并确认 healthy
 - [x] 验证 MySQL 库与 Flyway V1-V12 状态
-- [x] **已完成**：用户已把 `.env` 中 `DEEPSEEK_API_KEY` 换成真实 Key
+- [x] 用户已填入真实 Key
+- [x] MySQL 宿主机端口改回 3306
 
 ### Phase 1：M13 AI 基础设施与对话骨架
 
-- [ ] 引入 Spring AI 依赖（Redis Stack 镜像已在 Phase 0.5 完成）
-- [ ] 跑待验证事项 T1（Spring AI 1.1.8 + Boot 3.4.5 启动）与 T2（M11 回归）
+- [x] 引入 Spring AI 依赖（仅 DeepSeek starter；transformers 与 vector-store-redis 延后至 M15）
+- [x] 跑待验证事项 T1（Spring AI 1.1.8 + Boot 3.4.5 编译与启动）—— 通过
+- [x] 跑待验证事项 T2（M11 回归）—— 189 项测试全绿
+- [x] 修复引入依赖后暴露的 M11 既有测试脆弱性
 - [ ] 新增 Flyway V13 与 AI 实体 / Mapper / Service
 - [ ] 实现 `MysqlChatMemoryRepository` 与编排骨架
 - [ ] 新增 4 个对话接口与前端面板

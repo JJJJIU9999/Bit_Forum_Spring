@@ -31,6 +31,21 @@ spring:
         acknowledge-mode: manual
   flyway:
     baseline-on-migrate: true
+  # ==================== Spring AI（M13 起） ====================
+  ai:
+    deepseek:
+      # 测试环境提供占位 API Key。
+      #
+      # 原因：DeepSeekChatAutoConfiguration 只在类路径上有 DeepSeekApi 时生效，
+      # 且其 deepSeekChatModel() 方法没有 @ConditionalOnProperty 条件，
+      # 只要自动配置被加载就会无条件创建 bean 并校验 api-key 非空
+      # （缺失时抛 IllegalArgumentException: DeepSeek API key must be set）。
+      # 官方 starter 的 spring.ai.deepseek.chat.enabled 并不控制该 bean 的创建，
+      # 因此这里必须给出一个非空占位值，Spring 上下文才能启动。
+      #
+      # 安全性：测试不会真正调用 DeepSeek 接口；需要验证 AI 逻辑的测试必须使用
+      # Spring AI 的 Mock 聊天模型，而不是真实网络请求。
+      api-key: test-placeholder-key-not-used-for-real-calls
 
 jwt:
   secret: bit-forum-test-secret-minimum-32-bytes

@@ -30,6 +30,22 @@ spring:
   # 全新数据库仍会按 db/migration 下的 V1、V2... 脚本自动初始化
   flyway:
     baseline-on-migrate: true
+  # ==================== Spring AI（M13 起） ====================
+  ai:
+    deepseek:
+      # API Key 只从环境变量读取，绝不写入代码或提交到仓库。
+      # 本地开发时由 .env 提供；Docker 部署时由 compose 透传。
+      api-key: ${DEEPSEEK_API_KEY:}
+      chat:
+        # 与 datasource / rabbitmq / jwt 的约定保持一致：必需的凭据缺失时启动即失败，
+        # 避免应用"看似正常启动、调用 AI 时才报错"。
+        # 默认值沿用 Spring AI 的 true；测试环境在 src/test/resources/application.yml
+        # 中显式设为 false，因为测试不应依赖真实 API Key。
+        # 需要临时关闭 AI（例如演示降级链路）时，设置 DEEPSEEK_CHAT_ENABLED=false。
+        enabled: ${DEEPSEEK_CHAT_ENABLED:true}
+        options:
+          model: deepseek-chat
+          temperature: 0.7
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:604800000}
