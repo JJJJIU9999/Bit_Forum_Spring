@@ -220,6 +220,30 @@ public class ArticleService {
         return article;
     }
 
+    /**
+     * 按可见性查询文章详情。
+     *
+     * 已发布文章对所有人可见；草稿、待审核、已驳回、已下架仅作者本人可见。
+     * 这样作者能预览自己的未公开内容，同时不会通过详情接口泄露他人的草稿。
+     *
+     * @param id            文章 id
+     * @param currentUserId 当前登录用户 id；未登录传 null
+     * @return 可见时返回文章，不可见或不存在时返回 null
+     */
+    public Article findReadableById(Long id, Long currentUserId) {
+        Article article = articleMapper.selectById(id);
+        if (article == null) {
+            return null;
+        }
+        boolean published = STATUS_PUBLISHED.equals(article.getStatus());
+        boolean owner = currentUserId != null && currentUserId.equals(article.getUserId());
+        if (!published && !owner) {
+            return null;
+        }
+        fillArticleMetadata(article);
+        return article;
+    }
+
     @Transactional
     public void favoriteArticle(Long userId, Long articleId) {
         Article article = articleMapper.selectById(articleId);

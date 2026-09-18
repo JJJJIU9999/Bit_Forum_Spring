@@ -281,3 +281,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--terracotta); out
   .dialog-actions .primary-button, .dialog-actions .ghost-button, .dialog-actions .danger-button { width: 100%; }
 }
 @media (max-width: 390px) { .dashboard-stat-grid { grid-template-columns: 1fr; } .article-detail-footer { grid-template-columns: 1fr; } }
+
+/* 未公开内容（草稿/待审核/已驳回/已下架）的预览提示。
+   这类文章仅作者本人可见，因此页面按"预览"呈现：给提示、不给公开互动入口。 */
+.unpublished-banner {
+  margin: 14px 0;
+  padding: 11px 14px;
+  color: var(--terracotta);
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid #f0d3c9;
+  border-radius: var(--radius-sm);
+  background: var(--terracotta-soft);
+}

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,6 +28,7 @@ import com.bitforum.entity.Article;
 import com.bitforum.service.ArticleService;
 import com.bitforum.service.NotificationService;
 import com.bitforum.service.RedisService;
+import com.bitforum.util.JwtUtil;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -44,6 +46,8 @@ public class ArticleController {
     private RedisService redisService;
     @Autowired
     private NotificationService notificationService;
+    @Autowired
+    private JwtUtil jwtUtil;
 
     @PostMapping("/publish")
     @Operation(summary = "提交文章审核", description = "需要登录。保留 publish 路径，当前语义为提交审核", security = @SecurityRequirement(name = "bearerAuth"))
@@ -212,16 +216,41 @@ public class ArticleController {
     }
 
     @GetMapping("/detail")
-    @Operation(summary = "查询文章详情", description = "公开接口，仅可查询已发布文章")
-    public Result<Article> detail(@RequestParam Long articleId) {
-        Article article = articleService.findPublishedById(articleId);
+    @Operation(summary = "查询文章详情",
+            description = "公开接口。已发布文章对所有人可见；草稿、待审核、已驳回、已下架仅作者本人可见（需携带 Bearer Token）")
+    public Result<Article> detail(
+            @RequestParam Long articleId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long currentUserId = parseOptionalUserId(authorization);
+        Article article = articleService.findReadableById(articleId, currentUserId);
         if (article == null) {
             return Result.fail(404, "文章不存在");
         }
-        Long views = redisService.getViews(articleId);
-        article.setViewCount(views.intValue());
-        article.setLikeCount(redisService.getLikeCount(articleId).intValue());
+        // 只有已发布文章才叠加 Redis 中的浏览量/点赞数；
+        // 未公开内容不计浏览量，也不展示公开互动数据
+        if (ArticleService.STATUS_PUBLISHED.equals(article.getStatus())) {
+            Long views = redisService.getViews(articleId);
+            article.setViewCount(views.intValue());
+            article.setLikeCount(redisService.getLikeCount(articleId).intValue());
+        }
         return Result.ok("文章查找成功", article);
+    }
+
+    /**
+     * 解析可选的登录身份。
+     *
+     * 详情接口本身是公开的，但作者需要能查看自己的草稿与已驳回文章，
+     * 因此这里解析可选的 Bearer Token：缺失或无效时返回 null，按匿名处理。
+     */
+    private Long parseOptionalUserId(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+        try {
+            return jwtUtil.getUserId(authorization.substring(7));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @GetMapping("/view")
