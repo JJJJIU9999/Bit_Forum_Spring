@@ -12,15 +12,15 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M13 已完成**（对话骨架 + 持久化 + 接口 + 前端面板 + 真实调用验证） |
-| 最新 Flyway 迁移 | **V13__add_ai_conversation.sql**（已应用，schema v13） |
-| 模块完成度 | M13 已完成；M14-M18 未开始 |
-| 当前主线 | M13 收尾；下一步 M14 工具集与 Tool Calling |
+| 当前阶段 | **M14 已完成**（工具集 + Tool Calling + 身份注入修正 + 真实调用验证） |
+| 最新 Flyway 迁移 | `V13__add_ai_conversation.sql`（M14 无新增迁移） |
+| 模块完成度 | M13、M14 已完成；M15-M18 未开始 |
+| 当前主线 | M14 收尾；下一步 M15 RAG 知识库与向量检索 |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
 | 数据库状态 | MySQL 8.0.46，Flyway V1-V13 全部 success |
-| 测试状态 | **211 项：210 通过 + 1 项条件跳过**（真实 DeepSeek 冒烟测试默认跳过） |
-| 真实调用验证 | 已通过（`DEEPSEEK_CHAT_ENABLED=true` 时实际调用 DeepSeek 成功） |
-| 待办 | M14：10 个 `@Tool` 工具类、ToolRegistry、AgentRouter |
+| 测试状态 | **233 项：232 通过 + 1 项条件跳过** |
+| 真实调用验证 | 已通过：AI 能调用搜索工具返回真实站内文章；能执行点赞写操作 |
+| 待办 | M15：引入 transformers 与 vector-store-redis、Flyway V14、RAG 检索 |
 
 ## 总体进度
 
@@ -29,7 +29,7 @@
 | Prep | AI Agent 升级计划书 | 已完成 | 计划书、勘察证据、进度记录已落盘 | `docs/graduation/ai-agent-upgrade/` |
 | Prep | 前置环境（Redis Stack 替换 + Key 配置 + 中间件启动） | 已完成 | 三容器 healthy；RediSearch 2.10.20 已加载；向量检索端到端验证通过 | `findings.md` 第五节 |
 | M13 | AI 基础设施与对话骨架 | **已完成** | 211 项测试（210 通过 + 1 跳过）；真实 DeepSeek 调用验证通过 | 本文 |
-| M14 | 工具集与 Tool Calling | 未开始 | — | 待创建 |
+| M14 | 工具集与 Tool Calling | **已完成** | 233 项测试（232 通过 + 1 跳过）；真实调用验证工具可用 | 本文 |
 | M15 | RAG 知识库与向量检索 | 未开始 | — | 待创建 |
 | M16 | 内容审核 Agent | 未开始 | — | 待创建 |
 | M17 | 运营分析 Agent 与智能推荐 | 未开始 | — | 待创建 |
@@ -441,9 +441,108 @@ docker compose up -d mysql redis rabbitmq
 | `frontend/src/layouts/MainLayout.jsx` | 引入面板 |
 | `frontend/src/main.jsx` | 引入样式 |
 
-### 下一步：M14 工具集与 Tool Calling
+## M14 执行记录（2026-09-18）
 
-- 实现 10 个 `@Tool` 工具类，复用现有 Service
-- 实现 `ToolRegistry`（按 Agent 装配工具子集）与 `AgentRouter`
-- 记录工具调用冒烟会话到 `scripts/agent-tool-smoke.md`
-- 注意：`AgentResponse` 已预留 Token 字段；`AgentContext` 已预留工具注册扩展点
+### 目标与产出
+
+让 AI 能真正查询和操作站内数据，而不是只能依赖提示词里的静态说明。
+
+| 类型 | 新增文件 | 说明 |
+| --- | --- | --- |
+| 工具 | `ArticleTools` | searchArticles、getArticleDetail、getHotArticles、listCategories、createDraftArticle |
+| 工具 | `UserInteractionTools` | 收藏/取消收藏、点赞/取消点赞、关注/取消关注、getFollowStats |
+| 视图 | `ToolDtos` | 返回给模型的精简视图（ArticleBrief / ArticleDetail / CategoryBrief / HotArticleBrief / PagedResult / ActionResult）|
+| 注册 | `ToolRegistry` | 按 Agent 类型装配工具，实现最小权限 |
+| 上下文 | `AgentContextKeys` | ToolContext 键名常量 |
+| 修改 | `QaAgent` | 接入工具；通过 ToolContext 注入当前用户身份 |
+
+工具共 12 个方法（原计划 10 个工具类，实际按能力聚合为 2 个工具类 + 12 个方法）：
+- 查询类 5 个：搜索、详情、热榜、板块列表、关注统计
+- 写操作类 7 个：收藏/取消、点赞/取消、关注/取消、建草稿
+
+### 关键设计决策
+
+1. **不重复写 SQL**：所有工具复用既有 Service（`ArticleService`、`CategoryService`、
+   `RedisService`、`UserFollowService`），只做参数适配与结果裁剪。
+2. **控制上下文**：搜索每页上限 20 条，正文截断到 800 字并标注，避免模型一次拉取过多内容。
+3. **点赞行为对齐站内接口**：`RedisService.like()` + `increaseHot(3)` 组合，
+   与 `ArticleController` 的点赞逻辑一致；重复点赞不重复加热度。
+4. **最小权限**：`ToolRegistry` 按 Agent 类型装配，审核/运营/推荐 Agent 当前不装配任何工具，
+   为 M16 的审核 Agent 预留安全边界。
+
+### 关键修正：工具的用户身份改为应用注入
+
+**首版缺陷**：`userId` 被设计成 `@ToolParam` 工具参数，导致真实调用时 AI 回复
+「**请提供你的用户 id**，我才能执行这次点赞」。
+
+**问题**：当前登录用户是应用侧已知信息（JWT 已解析），推给模型索要既荒谬又不可靠。
+
+**修正**：改用 Spring AI 的 `ToolContext` 隐式参数（不进入模型可见的 schema）：
+
+```java
+// 工具侧
+public ActionResult likeArticle(@ToolParam(...) Long articleId, ToolContext toolContext) {
+    Long userId = currentUserId(toolContext);
+    ...
+}
+// Agent 侧
+chatClient.prompt().messages(messages).tools(tools).toolContext(toolContext).call();
+```
+
+**验证时的坑**：修复后在**旧会话**复测仍在索要 userId —— 因为该会话历史里已留下旧结论，
+模型在延续上下文。**新建干净会话复测，AI 直接执行点赞并返回真实结果**。
+涉及工具 schema 或提示词的改动，必须用干净会话验证。
+
+### 测试
+
+| 测试类 | 项数 | 覆盖内容 |
+| --- | --- | --- |
+| `ArticleToolsTest` | 18 | 只检索已发布文章、空结果容错、分页上限、超长正文截断、草稿不可见、收藏落库、
+草稿不可收藏、点赞成功加热度、重复点赞不加热度、关注与粉丝统计、建草稿为 DRAFT 状态、缺参拒绝 |
+| `ToolRegistryTest` | 4 | QA 拿到工具、其他类型不拿到、null 类型安全返回空、枚举常量稳定 |
+
+| 命令 | 结果 |
+| --- | --- |
+| `mvn -Dtest=ArticleToolsTest,ToolRegistryTest test` | 22 项通过 |
+| `mvn test`（全量） | **Tests run: 233, Failures: 0, Errors: 0, Skipped: 1** |
+
+### 真实链路验证（干净会话）
+
+| 验证项 | 结果 |
+| --- | --- |
+| 「站内有没有关于 Redis 的文章？」 | AI 调用 searchArticles，返回真实文章（id=87《Redis 热点数据同步方案》，作者 Alice 后端笔记，板块 Java 后端，浏览 206，点赞 3）|
+| 「帮我点赞文章87」 | AI 通过 getArticleDetail 确认文章存在后执行点赞，返回成功，**不再索要 userId** |
+| 顺带观察 | AI 主动指出「点赞接口返回 1，而详情页显示 3，口径可能不同」—— 说明它在交叉比对真实数据 |
+
+### 成本观察
+
+工具调用会显著提高 token 消耗（工具 schema 随每次请求发送 + 返回结果进入上下文）：
+
+| 场景 | token |
+| --- | --- |
+| M13 纯对话 | 1,842 |
+| M14 搜索工具调用 | 7,823 |
+| M14 写操作（先读详情再点赞） | 8,893 |
+
+已记入 `findings.md` 6.7，M18 的成本统计必须计入工具 schema 的固定开销。
+
+### M14 修改/新增文件
+
+| 文件 | 变更 |
+| --- | --- |
+| `src/main/java/com/bitforum/ai/tool/ArticleTools.java` | 新增 |
+| `src/main/java/com/bitforum/ai/tool/UserInteractionTools.java` | 新增 |
+| `src/main/java/com/bitforum/ai/tool/ToolDtos.java` | 新增 |
+| `src/main/java/com/bitforum/ai/tool/ToolRegistry.java` | 新增 |
+| `src/main/java/com/bitforum/ai/tool/AgentContextKeys.java` | 新增 |
+| `src/main/java/com/bitforum/ai/agent/QaAgent.java` | 接入工具与 ToolContext，提示词改为"用工具查而非依赖静态说明" |
+| `src/test/java/com/bitforum/ai/tool/ArticleToolsTest.java` | 新增，18 项 |
+| `src/test/java/com/bitforum/ai/tool/ToolRegistryTest.java` | 新增，4 项 |
+
+### 下一步：M15 RAG 知识库与向量检索
+
+- 引入 `spring-ai-starter-model-transformers` 与 `spring-ai-starter-vector-store-redis`
+- 新增 Flyway V14：`ai_kb_document`、`ai_kb_chunk`
+- 实现 `ArticleChunkingService` / `KbIndexService` / `RagService`
+- 异步索引走 RabbitMQ，复用既有 DLQ + 手动 ACK + Redis 幂等套路
+- 扩展名搜索能力：当前 searchArticles 是关键词匹配，M15 补语义检索

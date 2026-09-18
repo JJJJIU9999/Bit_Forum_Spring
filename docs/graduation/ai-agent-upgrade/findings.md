@@ -952,6 +952,68 @@ curl -s https://api.deepseek.com/models -H "Authorization: Bearer $DEEPSEEK_API_
 默认 `deepseek-chat` 调用能成功（服务端实际返回 `deepseek-flash`），
 M14-M16 如需指定模型，应以 `/models` 返回的 id 为准。
 
+### 6.6 M14 实施中发现的关键设计问题：工具的用户身份绝不能由模型传
+
+**现象**：M14 首版把 `userId` 设计成工具参数（`@ToolParam(description = "当前登录用户的 id")`）。
+真实调用后 AI 的回复是：
+
+> 点赞是写操作……**请提供你的用户 id**（当前登录用户的 id），我才能执行这次点赞。
+> 工具要求必须传入当前登录用户 id，我这边拿不到你的账号信息，也没法猜。
+
+**问题本质**：当前登录用户是**应用侧已知信息**（JWT 里就有，`LoginInterceptor` 已解析为
+`request attribute`），却被推给模型去索要。后果有三：
+1. 用户体验荒谬 —— 系统自己知道用户是谁，却问用户要 id；
+2. 可靠性风险 —— 模型可能传错 id，或从对话里"推断"出一个错误身份；
+3. 安全边界模糊 —— 身份本应不可协商，不应出现在模型的参数空间里。
+
+**正确做法**：Spring AI 提供 `ToolContext`，作为**隐式参数**注入，不进入暴露给模型的 schema。
+官方文档示例：
+
+```java
+@Tool(description = "Retrieve customer information")
+Customer getCustomerInfo(Long id, ToolContext toolContext) {
+    return customerRepository.findById(id, toolContext.getContext().get("tenantId"));
+}
+```
+
+**落地方式**：
+
+```java
+// 工具侧：接收 ToolContext，从中取身份
+public ActionResult likeArticle(
+        @ToolParam(description = "要点赞的文章 id，必须来自搜索结果") Long articleId,
+        ToolContext toolContext) {
+    Long userId = currentUserId(toolContext);
+    ...
+}
+
+// Agent 侧：调用模型时注入
+Map<String, Object> toolContext = new HashMap<>();
+toolContext.put(AgentContextKeys.USER_ID, context.userId());
+chatClient.prompt().messages(messages).tools(tools).toolContext(toolContext).call();
+```
+
+**验证方式与一个容易误判的坑**：修复后首次在**旧会话**复测，AI 仍在索要 userId。
+原因不是修复失效，而是该会话的历史里已经留下了"工具要求传入 userId"的旧结论，
+模型在延续上下文行为。**改用全新会话复测，AI 直接执行了点赞并返回真实结果**。
+教训：涉及提示词/工具 schema 的改动，必须用干净会话验证，否则会被历史上下文误导。
+
+### 6.7 M14 工具调用的成本观察
+
+工具调用会显著提高单轮 token 消耗，原因有二：工具的 JSON Schema 会随每次请求发送，
+以及工具返回结果会进入上下文。
+
+| 场景 | token 消耗 |
+| --- | --- |
+| M13 纯对话（无工具） | 1,842 |
+| M14 一次工具调用（搜索文章） | 7,823 |
+| M14 一次写操作（点赞，先读详情再执行） | 8,893 |
+
+**结论**：M18 的 Token 预算与成本统计必须考虑工具 schema 的固定开销。
+若工具数量继续增长（M16 审核、M17 运营各自会增加工具），需要评估
+"按 Agent 装配工具子集"的实际收益 —— 当前 `ToolRegistry` 已按类型隔离，
+正是为控制这一开销所做的设计。
+
 ---
 
 ## 七、风险记录

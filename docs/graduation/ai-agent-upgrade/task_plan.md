@@ -461,9 +461,13 @@ git diff --check
 
 ### Phase 2：M14 工具集与 Tool Calling
 
-- [ ] 实现 10 个 `@Tool` 工具类
-- [ ] 实现 `ToolRegistry` 与 `AgentRouter`
-- [ ] 记录工具调用冒烟会话
+- [x] 实现工具类（实际按能力聚合为 `ArticleTools` 5 个方法 + `UserInteractionTools` 7 个方法，共 12 个工具）
+- [x] 实现 `ToolRegistry`（按 Agent 装配工具子集，审核/运营类型当前不装配）
+- [x] 修正设计缺陷：工具的用户身份改由 `ToolContext` 注入，不作为模型参数
+- [x] 真实链路验证：AI 能调用搜索工具返回真实文章、能执行点赞写操作
+- [ ] 记录工具调用冒烟会话到 `scripts/agent-tool-smoke.md`（真实会话已验证，待整理成文档）
+
+**M14 已完成**。关键设计问题与验证方法见 `findings.md` 6.6（身份注入）与 6.7（工具成本）。
 
 ### Phase 3：M15 RAG 知识库与向量检索
 
