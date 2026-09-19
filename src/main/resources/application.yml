@@ -114,6 +114,29 @@ bitforum:
       # bge 系列官方建议：查询侧加检索指令前缀，passage 侧不加。
       # 索引侧的向量计算不带前缀，此处与官方用法保持一致。
       query-prefix: ${BITFORUM_KB_QUERY_PREFIX:为这个句子生成表示以用于检索相关文章：}
+    moderation:
+      # ===== M16：内容审核 Agent =====
+      # 记录产生判断的模型标识，便于换模型后识别历史数据。
+      model-name: ${BITFORUM_MODERATION_MODEL:deepseek-flash}
+      # 单次审核提交给模型的内容长度上限，超长截断（正文只用于风险判断，不需要全文）。
+      max-content-chars: ${BITFORUM_MODERATION_MAX_CHARS:2000}
+      # 自动放行开关。默认关闭：AI 只提供建议，是否放行由人工决定
+      # （见 task_plan.md 的 M16 实施决策：自动 PASS 但不自动 REJECT）。
+      auto-approve-enabled: ${BITFORUM_MODERATION_AUTO_APPROVE:false}
+      # 自动放行阈值。**不是预设值**，由评测实验确定，流程见 m16-eval-protocol.md §6。
+      #
+      # 开发集（70 条合成样本）扫描结果：confidence ≥ 0.99 且 risk < 0.01 时零非 PASS 放行，
+      # 可放行 4 条（占正常内容 13.3%）。
+      #
+      # ⚠️ 测试集（30 条独立样本）验证**未达标**：同一阈值在测试集上放行 0 条（0.0%），
+      #    覆盖率低于开发集 —— 说明该阈值过拟合了开发集（那 4 条高置信样本只在开发集出现）。
+      #    规范 §6 步骤 7 要求覆盖率不低于开发集水平，因此判定为未通过。
+      #    按规范禁止用测试集结果回改阈值，故保留此值不改。
+      #
+      # 结论：**自动放行保持默认关闭**（见 auto-approve-enabled）。启用它需要更大规模样本
+      # 或真实流量数据重新估计阈值；当前数据不足以支撑"自动放行"这个会改变线上状态的动作。
+      auto-approve-confidence: ${BITFORUM_MODERATION_AUTO_APPROVE_CONFIDENCE:0.99}
+      auto-approve-max-risk: ${BITFORUM_MODERATION_AUTO_APPROVE_MAX_RISK:0.01}
 
 management:
   endpoints:

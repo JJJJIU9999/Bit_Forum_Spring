@@ -35,7 +35,37 @@ public class RabbitMQConfig {
     public static final String KB_INDEX_DLQ_ROUTING_KEY = "article.kb.index.dlq";
     public static final String KB_INDEX_DLQ = "article.kb.index.dlq";
 
+    // M16：内容审核队列。同样复用 article.exchange、配独立队列与独立死信队列，
+    // 与文章发布通知、知识库索引两条链路互不影响。
+    public static final String MODERATION_QUEUE = "article.moderation.queue";
+    public static final String MODERATION_ROUTING_KEY = "article.moderation";
+    public static final String MODERATION_DLQ_ROUTING_KEY = "article.moderation.dlq";
+    public static final String MODERATION_DLQ = "article.moderation.dlq";
+
     private static final Logger log = LoggerFactory.getLogger(RabbitMQConfig.class);
+
+    @Bean
+    public Queue moderationQueue() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE);
+        args.put("x-dead-letter-routing-key", MODERATION_DLQ_ROUTING_KEY);
+        return new Queue(MODERATION_QUEUE, true, false, false, args);
+    }
+
+    @Bean
+    public Queue moderationDlq() {
+        return new Queue(MODERATION_DLQ, true);
+    }
+
+    @Bean
+    public Binding moderationBinding(Queue moderationQueue, DirectExchange articleExchange) {
+        return BindingBuilder.bind(moderationQueue).to(articleExchange).with(MODERATION_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding moderationDlqBinding(Queue moderationDlq, DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(moderationDlq).to(articleDlxExchange).with(MODERATION_DLQ_ROUTING_KEY);
+    }
 
     @Bean
     public Queue kbIndexQueue() {

@@ -16,8 +16,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -32,8 +30,10 @@ import com.bitforum.mapper.ArticleAuditRecordMapper;
 import com.bitforum.mapper.ArticleFavoriteMapper;
 import com.bitforum.mapper.ArticleMapper;
 import com.bitforum.mapper.CategoryMapper;
+import com.bitforum.message.AfterCommitExecutor;
 import com.bitforum.message.ArticlePublishMessage;
 import com.bitforum.message.KbIndexMessage;
+import com.bitforum.message.ModerationMessage;
 
 @Service
 public class ArticleService {
@@ -51,6 +51,8 @@ public class ArticleService {
     private ArticleFavoriteMapper articleFavoriteMapper;
     @Autowired
     private RabbitTemplate rabbitTemplate;
+    @Autowired
+    private AfterCommitExecutor afterCommitExecutor;
     @Autowired
     private CommentService commentService;
     @Autowired
@@ -114,6 +116,9 @@ public class ArticleService {
         }
         article.setStatus(STATUS_PENDING);
         articleMapper.updateById(article);
+        // M16：进入待审核状态后异步送 AI 分析。AI 只提供建议，是否通过仍由人工决定
+        //（自动放行需显式开启开关，且仅限高置信 PASS）。
+        sendModerationMessage(articleId);
     }
 
     public List<Article> listAll() {
@@ -455,16 +460,7 @@ public class ArticleService {
      * 因此这里注册事务同步回调，等提交完成再投递。
      */
     private void sendKbIndexMessage(Long articleId) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    doSendKbIndexMessage(articleId);
-                }
-            });
-            return;
-        }
-        doSendKbIndexMessage(articleId);
+        afterCommitExecutor.run(() -> doSendKbIndexMessage(articleId));
     }
 
     private void doSendKbIndexMessage(Long articleId) {
@@ -480,6 +476,31 @@ public class ArticleService {
             // 知识库索引是增强能力：MQ 不可用时不能反过来影响发帖、下架等主流程。
             // 漏掉的消息可以在恢复后通过管理员的全量重建接口补齐。
             log.error("知识库索引消息发送失败：articleId={}", articleId, e);
+        }
+    }
+
+    /**
+     * 发送内容审核消息（M16）。
+     *
+     * <p>同样在事务提交后投递。MQ 故障不影响发帖主流程：
+     * 漏掉的审核消息只会让该文章回到"纯人工审核"的原始流程，不会导致内容丢失或误放行。
+     */
+    private void sendModerationMessage(Long articleId) {
+        afterCommitExecutor.run(() -> doSendModerationMessage(articleId));
+    }
+
+    private void doSendModerationMessage(Long articleId) {
+        ModerationMessage message = new ModerationMessage();
+        message.setTargetType(ModerationMessage.TARGET_ARTICLE);
+        message.setTargetId(articleId);
+        message.setMessageId(UUID.randomUUID().toString());
+        try {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.ARTICLE_EXCHANGE,
+                    RabbitMQConfig.MODERATION_ROUTING_KEY,
+                    message);
+        } catch (RuntimeException e) {
+            log.error("内容审核消息发送失败：articleId={}", articleId, e);
         }
     }
 
