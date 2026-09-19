@@ -25,7 +25,10 @@ const NAV_GROUPS = [
   },
   {
     label: 'AI 能力',
-    items: [{ to: '/admin/kb', label: '知识库', icon: Database }],
+    items: [
+      { to: '/admin/kb', label: '知识库', icon: Database },
+      { to: '/admin/moderation', label: 'AI 审核', icon: ShieldCheck },
+    ],
   },
 ]
 

@@ -120,3 +120,16 @@ export function getKbStats() {
 export function rebuildKnowledgeBase() {
   return request.post('/admin/ai/kb/rebuild')
 }
+
+// M16：AI 审核记录查询、人工反馈与处理标记。
+export function pageModerationRecords(params = { pageNum: 1, pageSize: 10, pendingOnly: true }) {
+  return request.get('/admin/ai/moderation/records', { params })
+}
+
+export function submitModerationFeedback(recordId, feedback) {
+  return request.post(`/admin/ai/moderation/records/${recordId}/feedback`, { feedback })
+}
+
+export function markModerationHandled(recordId) {
+  return request.post(`/admin/ai/moderation/records/${recordId}/handle`)
+}

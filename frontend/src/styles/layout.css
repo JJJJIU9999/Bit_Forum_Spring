@@ -134,3 +134,62 @@
   border-radius: var(--radius-sm);
   background: var(--terracotta-soft);
 }
+
+/* M16：AI 审核记录页 */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.filter-row select {
+  min-height: 36px;
+  padding: 6px 10px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  font-size: 13px;
+}
+
+.decision-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.decision-reject { color: #fffdf8; background: var(--danger); }
+.decision-review { color: #6b4a12; background: #f5e2b8; }
+.decision-pass { color: #1f4d33; background: var(--forest-soft); }
+
+.moderation-detail {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--paper-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  /* 覆盖表格单元格的截断，展开后需要完整换行 */
+  white-space: normal;
+}
+
+.moderation-detail p { margin: 0 0 4px; }
+.moderation-detail ul { margin: 6px 0 0; padding-left: 16px; }
+
+.muted {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
