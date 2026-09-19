@@ -12,13 +12,13 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M18 进行中**：T12/T13 前置验证已通过；V18 `ai_execution_trace` + `TraceRecorder` + 四条链路埋点 + 管理端查询接口已落地（381 项测试全绿）；待做 V19 `ai_usage_stat`、`AiDegradeGuard`、前端轨迹页 |
-| 最新 Flyway 迁移 | `V18__add_ai_execution_trace.sql`（AI 执行轨迹；下一个是 V19 `ai_usage_stat`） |
-| 模块完成度 | M13-M17 已完成；M18 进行中（轨迹模块已完成，用量/降级/前端未做） |
+| 当前阶段 | **M18 进行中**：T12/T13 前置验证通过；V18 轨迹（`TraceRecorder` + 四条链路埋点 + 管理端查询）与 V19 用量（统一埋点 + 成本估算 + 概览接口）已落地（388 项测试全绿）；待做 `AiDegradeGuard` 与前端轨迹页 |
+| 最新 Flyway 迁移 | `V19__add_ai_usage_stat.sql`（AI 用量明细；M18 的迁移已到齐） |
+| 模块完成度 | M13-M17 已完成；M18 进行中（轨迹、用量已完成；统一降级与前端未做） |
 | 当前主线 | **M18（可观测性、工程化闭环，收敛版）**：Trace + Usage + Degrade + 简单可视化；见 `m18-handoff.md` |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
-| 数据库状态 | MySQL 8.0.46，Flyway V1-V18 全部 success |
-| 测试状态 | **381 项：372 通过 + 9 项条件跳过**（跳过项均为需要真实 API Key 的调用测试）；前端 33 项 |
+| 数据库状态 | MySQL 8.0.46，Flyway V1-V19 全部 success |
+| 测试状态 | **388 项：379 通过 + 9 项条件跳过**（跳过项均为需要真实 API Key 的调用测试）；前端 33 项 |
 | 审核评测 | 开发集 70 条 + 独立测试集 30 条：漏放率 0%、误伤率 0%、安全召回率 100%；严格准确率 96.7%~97.1% |
 | **推荐评测** | **合成数据 + 留一法**：融合推荐 HitRate@10 = 0.8095（开发集）/ 0.8889（独立测试集），纯热榜 0.2381 / 0.2222，随机 0.2857 / 0.3333；规范 `m17-eval-protocol.md`，报告 `m17-eval-report.md` |
 | 推荐策略 | 已定稿（task_plan.md M17 实施决策）：排序全由 Java 完成、LLM 只写解释；只排除作者本人与已收藏；匿名可见（两路） |
@@ -28,7 +28,7 @@
 | 知识库状态 | 文章审核通过/下架/删除会自动更新；集成测试收尾会清空，需要时用管理页或重建接口恢复 |
 | 审核策略 | 已定稿（task_plan.md M16 实施决策）：决策与动作解耦、自动 PASS 但不自动 REJECT、评测集留独立测试集 |
 | 真实调用验证 | 已通过：工具调用（M14）；RAG 回答带引用（M15）；审核 Agent 8 条样本 8/8（M16-1） |
-| 待办 | M18：V18 轨迹 + `TraceRecorder` + 四条链路埋点 + 管理端查询（已完成）→ V19 `ai_usage_stat` → `AiDegradeGuard` → 前端轨迹页；决策简报 `m18-decision-brief.md`、交接文档 `m18-handoff.md` 未提交 |
+| 待办 | M18：V18 轨迹 + V19 用量 + 管理端查询（已完成）→ `AiDegradeGuard` 统一降级 → 前端轨迹页与用量概览；决策简报 `m18-decision-brief.md`、交接文档 `m18-handoff.md` 已提交 |
 
 ## 总体进度
 
@@ -2122,3 +2122,54 @@ export M17_VECTOR_PROBE=true
 | `ModerationTriggerTest` 2 条失败 | 发送处多了一个 `MessagePostProcessor` 参数，`verify` 的签名对不上 | 断言补上 `any(MessagePostProcessor.class)` |
 | `ModerationMessageListenerTest` 6 条 NPE | 监听器新增 `@Autowired TraceRecorder`，`@InjectMocks` 没有对应 mock | 补 `@Mock TraceRecorder` |
 | 全量测试会清空向量索引 | M15 起的既有行为 | 跑完后用 `M17_VECTOR_PROBE=true` 重建 `bitforum-kb` |
+
+---
+
+### M18-2：V19 `ai_usage_stat` + 统一用量埋点 + 成本估算（2026-09-19）
+
+- **Status:** complete
+
+#### 一、做法：用量写在"轨迹收尾"那一处
+
+M18 决策 Q1 要解决的具体缺口（查现库实测）：
+
+| 来源表 | token | 实测 |
+| --- | --- | --- |
+| `ai_message`（QA） | ✅ | 8 条助手消息合计 41076 tokens |
+| `ai_insight_report`（洞察） | ✅ | 1 条成功，2695 tokens / 5004 ms |
+| `ai_recommend_log`（推荐理由） | ❌ | 1074 条记录里 54 条生成了理由，**理由的 token 从未落库** |
+| `ai_moderation_record`（审核） | ❌ | 表里根本没有 token 字段 |
+
+因此本轮做了两件事：
+
+1. **补采缺口**：`ModerationAgent` 从 `.call().entity(...)` 改为 `.call().responseEntity(...)`
+   （`entity()` 只返回解析后的对象，usage 会丢），`ModerationOutcome` / `ModerationResult` 带上 token；
+   `ReasonOutcome` 增加 `totalTokens`。
+2. **统一埋点**：`TraceRecorder.complete(...)` 顺带调用 `AiUsageRecorder.record(...)`。
+   四个 Agent 都必然经过 `complete`，因此**结构上不可能再出现"某个 Agent 忘了记 token"**。
+   用量写入与轨迹写入互相独立：任何一方失败都不连累另一方，更不影响 AI 调用本身的返回。
+
+#### 二、新增文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `V19__add_ai_usage_stat.sql` | 用量明细表：一行 = 一次 LLM 调用；`stat_date` 独立成列供按天聚合 |
+| `ai/entity/AiUsageStat.java`、`ai/mapper/AiUsageStatMapper.java` | 实体 + 4 个聚合 SQL（总量 / 按天 / 按 Agent / Top 用户），聚合全部下推 SQL |
+| `ai/usage/AiUsageRecorder.java` | 唯一写入入口 + 成本估算（输入/输出单价分开） |
+| `ai/usage/AiUsageQueryService.java`、`ai/dto/AiUsageOverviewResponse.java`、`ai/dto/AiUsageDtos.java` | 概览查询与返回结构 |
+| `controller/AdminAiUsageController.java` | `GET /api/admin/ai/usage/overview?days=7` |
+
+配置（`application.yml` 的 `bitforum.ai.usage`）：输入 ¥2 / 输出 ¥8 每百万 token（DeepSeek 公开价）；
+返回体里带上单价与口径说明 —— 成本是**估算值**，看数据的人要知道它是怎么来的。
+
+#### 三、验证
+
+| 项 | 结果 |
+| --- | --- |
+| 相关测试 | 62 项全绿（含新增 `AiUsageRecorderTest` 3 项、`AdminAiUsageControllerTest` 4 项） |
+| 后端全量 | **388 项：379 通过 + 9 条件跳过，0 失败** |
+| 前端 | 33 项通过；`npm run build` 成功 |
+| 迁移 | V19 已应用（`version "19 - add ai usage stat"`） |
+
+聚合 SQL 用**真实 MySQL** 验证（`AdminAiUsageControllerTest` 走真实库）：
+按天、按 Agent、Top 用户三个聚合的列别名与 DTO 映射正确 —— 这类错误纯 mock 测试看不出来。

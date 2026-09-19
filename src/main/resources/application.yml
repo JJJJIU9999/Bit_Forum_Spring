@@ -167,6 +167,15 @@ bitforum:
       # ===== M17：运营分析 Agent =====
       # 记录产生洞察的模型标识，便于换模型后识别历史数据
       model-name: ${BITFORUM_ANALYST_MODEL:deepseek-flash}
+    usage:
+      # ===== M18：用量成本的估算口径 =====
+      # 单价（元 / 百万 token），输入与输出分开：两者量级与价格都不同，
+      # 用一个混合单价会让"长上下文问答"与"短输入长输出"看起来一样贵。
+      # 默认值按 DeepSeek 公开价格（deepseek-chat：输入 ¥2、输出 ¥8 每百万 token）填写。
+      # ⚠️ 价格会随供应商调整，这里算出来的只是**估算值**，不作为账单依据；
+      #    修改配置只影响此后写入的 ai_usage_stat 行，历史行保留当时的估算。
+      input-price-per-million: ${BITFORUM_AI_INPUT_PRICE:2.0}
+      output-price-per-million: ${BITFORUM_AI_OUTPUT_PRICE:8.0}
 
 management:
   endpoints:

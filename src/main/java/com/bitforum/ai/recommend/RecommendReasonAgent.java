@@ -49,17 +49,18 @@ public class RecommendReasonAgent {
      * @param degraded           是否走了降级链路（推荐列表仍然可用，只是没有理由）
      */
     public record ReasonOutcome(Map<Long, String> reasonsByArticleId, String model,
-                                Integer promptTokens, Integer completionTokens,
+                                Integer promptTokens, Integer completionTokens, Integer totalTokens,
                                 long latencyMillis, boolean degraded, String errorMessage) {
 
         public static ReasonOutcome of(Map<Long, String> reasons, String model,
-                                       Integer promptTokens, Integer completionTokens, long latencyMillis) {
-            return new ReasonOutcome(Map.copyOf(reasons), model, promptTokens, completionTokens,
+                                       Integer promptTokens, Integer completionTokens, Integer totalTokens,
+                                       long latencyMillis) {
+            return new ReasonOutcome(Map.copyOf(reasons), model, promptTokens, completionTokens, totalTokens,
                     latencyMillis, false, null);
         }
 
         public static ReasonOutcome degraded(String model, long latencyMillis, String errorMessage) {
-            return new ReasonOutcome(Map.of(), model, null, null, latencyMillis, true,
+            return new ReasonOutcome(Map.of(), model, null, null, null, latencyMillis, true,
                     abbreviate(errorMessage));
         }
 
@@ -176,7 +177,7 @@ public class RecommendReasonAgent {
                     target.size(), reasons.size(), latency);
 
             return ReasonOutcome.of(reasons, modelName,
-                    promptTokens(response), completionTokens(response), latency);
+                    promptTokens(response), completionTokens(response), totalTokens(response), latency);
         } catch (RuntimeException exception) {
             long latency = System.currentTimeMillis() - startedAt;
             log.warn("推荐理由生成失败，降级为无理由推荐：{}", exception.getMessage());
@@ -264,5 +265,11 @@ public class RecommendReasonAgent {
         return response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null
                 ? null
                 : response.getMetadata().getUsage().getCompletionTokens();
+    }
+
+    private Integer totalTokens(ChatResponse response) {
+        return response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null
+                ? null
+                : response.getMetadata().getUsage().getTotalTokens();
     }
 }

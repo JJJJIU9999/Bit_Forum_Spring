@@ -236,7 +236,7 @@ class RecommendServiceTest {
         when(categoryMapper.selectList(any())).thenReturn(List.of(category(16L, "技术")));
         when(reasonAgent.generate(any(), any(), anyBoolean())).thenReturn(
                 RecommendReasonAgent.ReasonOutcome.of(
-                        Map.of(85L, "与你正在看的这篇主题相近"), "deepseek-flash", 120, 30, 800L));
+                        Map.of(85L, "与你正在看的这篇主题相近"), "deepseek-flash", 120, 30, 150, 800L));
 
         RecommendResult result = service.recommend(RecommendRequest.forArticleDetail(13L, 87L, 5));
 

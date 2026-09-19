@@ -94,12 +94,18 @@ public class ModerationMessageListener {
                         message.getMessageId(), message.getTargetType(), message.getTargetId());
                 traceRecorder.step(TraceStepType.PERSIST, "未产生审核结果",
                         "对象不存在或状态不匹配，本次不做 AI 审核（人工流程兜底）");
+                traceRecorder.finish(null, null, null, null);
             } else {
                 traceRecorder.step(TraceStepType.PERSIST, "审核结果已落库",
                         "decision=" + result.decision() + "，action=" + result.action()
                                 + "，recordId=" + result.recordId());
+                // 审核链路此前没有 token 数据（M18 才补采），这里把它写进轨迹与用量明细
+                traceRecorder.step(TraceStepType.LLM_CALL, result.model(),
+                        "prompt=" + result.promptTokens() + ", completion=" + result.completionTokens(),
+                        result.latencyMillis(), result.totalTokens());
+                traceRecorder.finish(result.model(), result.promptTokens(), result.completionTokens(),
+                        result.totalTokens());
             }
-            traceRecorder.finish(null, null, null, null);
         } catch (Exception e) {
             log.error("审核消息处理失败：messageId={}, type={}, targetId={}",
                     message == null ? null : message.getMessageId(),

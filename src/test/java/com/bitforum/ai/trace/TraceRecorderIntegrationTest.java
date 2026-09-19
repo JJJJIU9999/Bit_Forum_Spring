@@ -51,6 +51,8 @@ class TraceRecorderIntegrationTest {
     private TraceRecorder traceRecorder;
     @Autowired
     private AiExecutionTraceMapper traceMapper;
+    @Autowired
+    private com.bitforum.ai.mapper.AiUsageStatMapper usageMapper;
 
     private final List<String> createdTraceIds = new ArrayList<>();
 
@@ -59,6 +61,10 @@ class TraceRecorderIntegrationTest {
         if (!createdTraceIds.isEmpty()) {
             traceMapper.delete(new LambdaQueryWrapper<AiExecutionTrace>()
                     .in(AiExecutionTrace::getTraceId, createdTraceIds));
+            // M18：轨迹收尾会顺带写一行用量明细，测试同样要清理，避免污染用量聚合
+            usageMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                    com.bitforum.ai.entity.AiUsageStat>()
+                    .in(com.bitforum.ai.entity.AiUsageStat::getTraceId, createdTraceIds));
             createdTraceIds.clear();
         }
     }
@@ -87,6 +93,19 @@ class TraceRecorderIntegrationTest {
 
         // 收尾后当前线程的上下文应被清理，避免后续代码误挂到已结束的轨迹上
         assertNull(TraceContext.current(), "收尾后必须清理 ThreadLocal");
+
+        // M18：轨迹收尾同时写一行用量明细（统一埋点）—— 四个 Agent 都走 complete，
+        // 因此审核与推荐理由的 token 缺口也一并被补上
+        List<com.bitforum.ai.entity.AiUsageStat> usages = usageMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                        com.bitforum.ai.entity.AiUsageStat>()
+                        .eq(com.bitforum.ai.entity.AiUsageStat::getTraceId, session.traceId()));
+        assertEquals(1, usages.size(), "一次调用应产生且只产生一条用量明细");
+        assertEquals(1020, usages.get(0).getTotalTokens());
+        assertEquals("QA", usages.get(0).getAgentType());
+        assertEquals(99001L, usages.get(0).getUserId());
+        assertEquals(com.bitforum.ai.entity.AiUsageStat.RESULT_SUCCESS, usages.get(0).getResult());
+        assertTrue(usages.get(0).getEstimatedCost().signum() > 0, "应按单价算出成本估算");
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.bitforum.ai.moderation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -29,21 +30,35 @@ public class ModerationAgent {
 
     private static final Logger log = LoggerFactory.getLogger(ModerationAgent.class);
 
-    /** 一次审核分析的结果；{@code degraded} 为 true 时 {@code assessment} 为 null */
+    /**
+     * 一次审核分析的结果；{@code degraded} 为 true 时 {@code assessment} 为 null。
+     *
+     * <p>M18 增加 token 三项：审核链路的用量此前**完全没有被记录过**
+     * （{@code ai_moderation_record} 里根本没有 token 字段），
+     * 导致"按 Agent 统计 token"在审核这一路上永远是空的。
+     * 这里从 {@code ChatResponse} 取出来，交给轨迹与用量埋点统一落库。
+     */
     public record ModerationOutcome(
             ModerationAssessment assessment,
             String model,
             long latencyMillis,
+            Integer promptTokens,
+            Integer completionTokens,
+            Integer totalTokens,
             boolean degraded,
             String errorMessage) {
 
-        public static ModerationOutcome of(ModerationAssessment assessment, String model, long latencyMillis) {
-            return new ModerationOutcome(assessment, model, latencyMillis, false, null);
+        public static ModerationOutcome of(ModerationAssessment assessment, String model, long latencyMillis,
+                                           Integer promptTokens, Integer completionTokens,
+                                           Integer totalTokens) {
+            return new ModerationOutcome(assessment, model, latencyMillis, promptTokens, completionTokens,
+                    totalTokens, false, null);
         }
 
         /** 分析失败：不产生判断，由正常人工流程兜底 */
         public static ModerationOutcome degraded(String errorMessage, String model, long latencyMillis) {
-            return new ModerationOutcome(null, model, latencyMillis, true, abbreviate(errorMessage));
+            return new ModerationOutcome(null, model, latencyMillis, null, null, null, true,
+                    abbreviate(errorMessage));
         }
 
         private static String abbreviate(String text) {
@@ -136,13 +151,17 @@ public class ModerationAgent {
         }
 
         try {
-            ModerationAssessment assessment = chatClient.prompt()
+            // M18：改为 responseEntity(...)，因为要同时拿到结构化结果与 ChatResponse 里的
+            // token 用量 —— entity(...) 只返回解析后的对象，usage 会在这里丢掉
+            var responseEntity = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .user(buildUserPrompt(targetType, content))
                     .call()
-                    .entity(ModerationAssessment.class);
+                    .responseEntity(ModerationAssessment.class);
 
             long latency = System.currentTimeMillis() - startedAt;
+            ChatResponse response = responseEntity == null ? null : responseEntity.response();
+            ModerationAssessment assessment = responseEntity == null ? null : responseEntity.entity();
             if (assessment == null) {
                 return ModerationOutcome.degraded("模型返回空结果", modelName, latency);
             }
@@ -152,12 +171,29 @@ public class ModerationAgent {
                     targetType, normalized.decisionEnum(), normalized.confidence(),
                     normalized.maxScore(), normalized.maxDimension(), latency);
 
-            return ModerationOutcome.of(normalized, modelName, latency);
+            return ModerationOutcome.of(normalized, modelName, latency,
+                    usageValue(response, true), usageValue(response, false), usageValue(response, null));
         } catch (RuntimeException exception) {
             long latency = System.currentTimeMillis() - startedAt;
             log.error("内容审核分析失败：type={}，content={}", targetType, abbreviate(content), exception);
             return ModerationOutcome.degraded(exception.getMessage(), modelName, latency);
         }
+    }
+
+    /**
+     * 从响应里取 token 用量。
+     *
+     * @param prompt true 取输入、false 取输出、null 取合计
+     */
+    private Integer usageValue(ChatResponse response, Boolean prompt) {
+        if (response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null) {
+            return null;
+        }
+        var usage = response.getMetadata().getUsage();
+        if (prompt == null) {
+            return usage.getTotalTokens();
+        }
+        return prompt ? usage.getPromptTokens() : usage.getCompletionTokens();
     }
 
     private String buildUserPrompt(ModerationTargetType targetType, String content) {

@@ -224,7 +224,8 @@ class ModerationServiceTest {
     }
 
     private ModerationAgent.ModerationOutcome outcome(ModerationAssessment assessment) {
-        return ModerationAgent.ModerationOutcome.of(assessment, "deepseek-flash", 800L);
+        // M18：token 三项由 ChatResponse 采集；本单元测试不关心，传 null 即可
+        return ModerationAgent.ModerationOutcome.of(assessment, "deepseek-flash", 800L, null, null, null);
     }
 
     /** 构造五维评估；{@code maxDimensionScore} 用于制造"某一维度风险最高"的场景。 */

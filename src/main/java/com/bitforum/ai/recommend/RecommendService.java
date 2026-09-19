@@ -377,7 +377,7 @@ public class RecommendService {
         List<RecommendedArticle> withReasons = applyReasons(result, reasonOutcome);
         traceRecorder.step(TraceStepType.LLM_CALL, reasonOutcome.model(),
                 "为 " + reasonOutcome.reasonsByArticleId().size() + " 条推荐生成理由",
-                reasonOutcome.latencyMillis(), null);
+                reasonOutcome.latencyMillis(), reasonOutcome.totalTokens());
         if (reasonOutcome.degraded()) {
             // 排序结果仍然可用（Java 定序），降级的只是"解释"这一层 ——
             // 这正是 M17 定下的设计，轨迹要把这一点如实记下来
@@ -390,7 +390,8 @@ public class RecommendService {
         saveRecommendLog(request, withReasons, degraded, (int) latency, experimentTag);
         traceRecorder.step(TraceStepType.PERSIST, "推荐记录落库",
                 "已写入 ai_recommend_log " + withReasons.size() + " 行（批次=" + experimentTag + "）");
-        traceRecorder.finish(modelName, null, null, null);
+        traceRecorder.finish(modelName, reasonOutcome.promptTokens(), reasonOutcome.completionTokens(),
+                reasonOutcome.totalTokens());
 
         log.info(">>> 推荐完成：scene={}，userId={}，来源文章={}，返回 {} 条（召回 {} 条），"
                         + "理由 {}/{} 条，批次={}，耗时 {} ms",

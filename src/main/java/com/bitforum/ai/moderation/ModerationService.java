@@ -46,9 +46,9 @@ public class ModerationService {
     /**
      * 一次审核的处理结果。
      *
-     * <p>M18 增加 {@code degraded} / {@code errorMessage}：轨迹要能回答"这次审核是不是走了降级"。
-     * 审核的降级不等于失败 —— 内容仍会按正常人工流程处理，只是**没有 AI 判断**，
-     * 两者在管理端必须能区分（与 M16「decision 与 action 解耦」同一原则）。
+     * <p>M18 增加 {@code degraded} / {@code errorMessage} / {@code model} / token 三项：
+     * 轨迹要能回答"这次审核是不是走了降级"，用量要能按 Agent 统计 token ——
+     * 而审核链路此前完全没有 token 数据。
      */
     public record ModerationResult(
             ModerationDecision decision,
@@ -56,7 +56,12 @@ public class ModerationService {
             boolean autoApproved,
             Long recordId,
             boolean degraded,
-            String errorMessage) {
+            String errorMessage,
+            String model,
+            long latencyMillis,
+            Integer promptTokens,
+            Integer completionTokens,
+            Integer totalTokens) {
     }
 
     /** 由确定性规则得出的动作计划 */
@@ -112,7 +117,8 @@ public class ModerationService {
                 ? ModerationDecision.REVIEW
                 : outcome.assessment().decisionEnum();
         return new ModerationResult(decision, plan.action(), autoApproved, record.getId(),
-                outcome.degraded(), outcome.errorMessage());
+                outcome.degraded(), outcome.errorMessage(), outcome.model(), outcome.latencyMillis(),
+                outcome.promptTokens(), outcome.completionTokens(), outcome.totalTokens());
     }
 
     /**

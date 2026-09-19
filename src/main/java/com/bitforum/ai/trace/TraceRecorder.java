@@ -15,7 +15,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.bitforum.ai.entity.AiExecutionTrace;
+import com.bitforum.ai.entity.AiUsageStat;
 import com.bitforum.ai.mapper.AiExecutionTraceMapper;
+import com.bitforum.ai.usage.AiUsageRecorder;
 
 /**
  * 执行轨迹记录器（M18 核心组件）。
@@ -51,10 +53,13 @@ public class TraceRecorder {
 
     private final AiExecutionTraceMapper traceMapper;
     private final ObjectMapper objectMapper;
+    private final AiUsageRecorder usageRecorder;
 
-    public TraceRecorder(AiExecutionTraceMapper traceMapper, ObjectMapper objectMapper) {
+    public TraceRecorder(AiExecutionTraceMapper traceMapper, ObjectMapper objectMapper,
+                         AiUsageRecorder usageRecorder) {
         this.traceMapper = traceMapper;
         this.objectMapper = objectMapper;
+        this.usageRecorder = usageRecorder;
     }
 
     // ==================== 开始 ====================
@@ -264,6 +269,7 @@ public class TraceRecorder {
         if (session == null) {
             return;
         }
+        int latencyMs = (int) Math.min(Integer.MAX_VALUE, session.elapsedMillis());
         try {
             AiExecutionTrace update = new AiExecutionTrace();
             update.setStatus(status);
@@ -271,7 +277,7 @@ public class TraceRecorder {
             update.setPromptTokens(promptTokens);
             update.setCompletionTokens(completionTokens);
             update.setTotalTokens(totalTokens);
-            update.setLatencyMs((int) Math.min(Integer.MAX_VALUE, session.elapsedMillis()));
+            update.setLatencyMs(latencyMs);
             update.setStepCount(session.stepCount());
             update.setSteps(writeSteps(session.steps()));
             // route 字段不是单独维护的：它就是轨迹里第一条 ROUTE 步骤的说明。
@@ -295,6 +301,24 @@ public class TraceRecorder {
                 TraceContext.clear();
             }
         }
+
+        // M18 用量明细：与轨迹写入**各自独立**。两者都是副产品，
+        // 任何一方失败都不应连累另一方，更不应影响 AI 调用本身的返回。
+        // 放在这里还有一个好处：四个 Agent 都必然经过 complete，
+        // 因此不可能出现"某个 Agent 忘了记 token"（这正是 Q1 选统一埋点的原因）。
+        usageRecorder.record(session.traceId(), session.scene(), session.agentType(), session.userId(),
+                model, promptTokens, completionTokens, totalTokens, latencyMs, usageResultOf(status));
+    }
+
+    /** 轨迹状态 → 用量结果码。 */
+    private String usageResultOf(String status) {
+        if (AiExecutionTrace.STATUS_SUCCESS.equals(status)) {
+            return AiUsageStat.RESULT_SUCCESS;
+        }
+        if (AiExecutionTrace.STATUS_DEGRADED.equals(status)) {
+            return AiUsageStat.RESULT_DEGRADED;
+        }
+        return AiUsageStat.RESULT_FAILED;
     }
 
     /** 清理当前线程上下文（异常路径兜底）。 */
