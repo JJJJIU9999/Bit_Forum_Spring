@@ -610,12 +610,17 @@ git diff --check
 
 ### Phase 6：M18 可观测性与工程化闭环（收敛版）
 
-- [ ] 新增 Flyway V19 `ai_execution_trace` + `TraceRecorder`（核心）
-- [ ] 新增 Flyway V18 `ai_usage_stat`（不含 `ai_prompt_template`）
-- [ ] `AiDegradeGuard`：统一降级
-- [ ] 前端「AI 执行轨迹」页 + 用量概览（简单优先）
-- [ ] （时间充足再做）`TokenBudgetGuard`
+- [x] 新增 Flyway **V18** `ai_execution_trace` + `TraceRecorder`（核心；**编号修正**：轨迹先占 V18）
+- [x] 新增 Flyway **V19** `ai_usage_stat`（统一用量埋点 + 成本估算；不含 `ai_prompt_template`）
+- [x] `AiDegradeGuard`：统一降级（改造四个既有 Agent，原因码 + 统一文案 + 记录入口收敛）
+- [x] 前端「AI 执行轨迹」页 + 用量概览（`/admin/ai-traces`；简单优先，不引图表库）
+- [ ] （时间充足再做）`TokenBudgetGuard` —— **本轮未做**，属于可选增强
 - [x] ~~LLM-as-Judge 评估脚本~~ / ~~Prompt 动态管理~~ / ~~AI 设置页~~（**本轮砍掉**）
+
+> **M18 完成记录（2026-09-19）**：前置验证 T12/T13 通过 → V18 轨迹（四条链路埋点 + 管理端查询）
+> → V19 用量 → 统一降级 → 前端轨迹页；后端 394 项 / 前端 36 项全绿；
+> 真实环境实测一次对话产生 5 步轨迹（含工具调用）与 1 条用量明细。
+> 细节见 `progress.md` 的 M18-0 ~ M18-4、`findings.md` 6.18 / 6.19。
 
 ### Phase 7：集成与答辩
 
