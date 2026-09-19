@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import { checkAdminHealth, getAdminDashboardSummary } from '../../api/adminApi.js'
+import AiInsightCard from '../../components/AiInsightCard.jsx'
 import PageHeader from '../../components/PageHeader.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
 import MessageBanner from '../../components/MessageBanner.jsx'
@@ -125,6 +126,9 @@ function Dashboard() {
             </section>
           ))}
         </div>
+
+        {/* M17：AI 运营洞察 —— 由管理员主动触发生成，异步返回后展示 */}
+        <AiInsightCard />
 
         <section className="dashboard-section">
           <div className="sub-heading">

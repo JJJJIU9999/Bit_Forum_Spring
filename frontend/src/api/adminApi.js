@@ -133,3 +133,21 @@ export function submitModerationFeedback(recordId, feedback) {
 export function markModerationHandled(recordId) {
   return request.post(`/admin/ai/moderation/records/${recordId}/handle`)
 }
+
+// M17：AI 运营洞察。生成是异步的 —— generate 只负责受理并立刻返回，
+// 之后用 getInsightStatus 轮询，完成后用 getLatestInsight 取报告。
+export function generateInsight() {
+  return request.post('/admin/ai/insight/generate')
+}
+
+export function getLatestInsight() {
+  return request.get('/admin/ai/insight/latest')
+}
+
+export function getInsightStatus() {
+  return request.get('/admin/ai/insight/status')
+}
+
+export function getInsightHistory(limit = 10) {
+  return request.get('/admin/ai/insight/history', { params: { limit } })
+}

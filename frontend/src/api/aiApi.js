@@ -23,3 +23,12 @@ export function sendMessage(conversationId, content) {
     { timeout: 60000 },
   )
 }
+
+// M17：根据用户刚问的问题推荐相关帖子。
+// 与消息里的 citations（参考来源）互补：那个是回答用到的文章，这个是"你可能还想看"的相关帖。
+export function recommendForQuery(query, limit = 3) {
+  return request.get('/ai/recommendations', {
+    params: { query, limit },
+    timeout: 30000,
+  })
+}

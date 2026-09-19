@@ -29,6 +29,16 @@ export function getHotArticles() {
   return request.get('/article/hot')
 }
 
+// 文章的相关推荐（M17）。公开接口，**未登录也能看到**：
+// 服务端用三路召回（内容相似 / 热度 / 关注）+ RRF 融合排序，
+// 匿名访客没有个人行为数据，会自动退化为"内容相似 + 热度"两路。
+// 推荐理由由 AI 生成，AI 不可用时该字段为空，列表照常返回。
+export function getRecommendations(articleId, limit = 5) {
+  return request.get('/article/recommendations', {
+    params: { articleId, limit },
+  })
+}
+
 // 发布文章需要登录，Authorization 会由 request.js 自动添加。
 export function publishArticle(payload) {
   return request.post('/article/publish', payload)

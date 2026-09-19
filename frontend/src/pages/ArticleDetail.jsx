@@ -8,6 +8,7 @@ import PageHeader from '../components/PageHeader.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import MessageBanner from '../components/MessageBanner.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
+import RelatedRecommendations from '../components/RelatedRecommendations.jsx'
 
 function ArticleDetail() {
   const { articleId } = useParams()
@@ -173,6 +174,15 @@ function ArticleDetail() {
             </footer>
           )}
         </article>
+      )}
+
+      {/* 相关推荐（M17）：与评论同一可见性规则 —— 只有公开内容才展示。
+          该组件在推荐不可用时自行隐藏，不会给阅读带来干扰 */}
+      {isPublished && (
+        <RelatedRecommendations
+          articleId={articleId}
+          onOpen={(id) => navigate(`/articles/${id}`)}
+        />
       )}
 
       {/* 评论只属于已发布文章；未公开内容不展示公开讨论 */}

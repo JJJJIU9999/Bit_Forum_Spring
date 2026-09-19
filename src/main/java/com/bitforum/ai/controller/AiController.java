@@ -15,6 +15,10 @@ import com.bitforum.ai.dto.AiConversationCreateRequest;
 import com.bitforum.ai.dto.AiConversationResponse;
 import com.bitforum.ai.dto.AiMessageResponse;
 import com.bitforum.ai.orchestrator.AgentOrchestrator;
+import com.bitforum.ai.recommend.RecommendService;
+import com.bitforum.ai.recommend.RecommendService.RecommendRequest;
+import com.bitforum.ai.recommend.RecommendService.RecommendResult;
+import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
 import com.bitforum.ai.service.AiConversationService;
 import com.bitforum.common.Result;
 
@@ -34,12 +38,43 @@ import jakarta.validation.Valid;
 @Tag(name = "AI 助手", description = "AI 会话管理与多轮对话")
 public class AiController {
 
+    /** 相关帖一次最多返回多少条，防止被当成列表接口使用。 */
+    private static final int MAX_RECOMMEND_LIMIT = 10;
+
     private final AiConversationService conversationService;
     private final AgentOrchestrator orchestrator;
+    private final RecommendService recommendService;
 
-    public AiController(AiConversationService conversationService, AgentOrchestrator orchestrator) {
+    public AiController(AiConversationService conversationService, AgentOrchestrator orchestrator,
+                        RecommendService recommendService) {
         this.conversationService = conversationService;
         this.orchestrator = orchestrator;
+        this.recommendService = recommendService;
+    }
+
+    /**
+     * 根据用户刚问的问题推荐站内相关帖子（M17）。
+     *
+     * <p>与 M15 的"参考来源"互补：参考来源是**回答用到了**哪些文章，
+     * 这里推荐的是"你可能还想看"的相关帖子 —— 所以它**不排除**回答里引用过的文章，
+     * 两者回答的是不同问题。
+     */
+    @GetMapping("/api/ai/recommendations")
+    @Operation(summary = "根据提问推荐相关帖子",
+            description = "用提问文本做内容相似召回，叠加热度与关注信号后融合排序；AI 不可用时列表照常返回")
+    public Result<List<RecommendedArticle>> recommendations(
+            @RequestAttribute("userId") Long userId,
+            @Parameter(description = "用户刚问的问题") @org.springframework.web.bind.annotation.RequestParam String query,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "5") Integer limit) {
+        int topN = limit == null || limit < 1 ? 5 : Math.min(limit, MAX_RECOMMEND_LIMIT);
+        try {
+            RecommendResult result = recommendService.recommend(
+                    RecommendRequest.forQuery(query, userId, topN));
+            return Result.ok("相关帖子推荐成功", result.articles());
+        } catch (RuntimeException e) {
+            // 推荐是增强能力：失败时前端只是不展示这一块，不该影响对话本身
+            return Result.ok("暂无相关推荐", List.of());
+        }
     }
 
     @PostMapping("/api/ai/conversations")

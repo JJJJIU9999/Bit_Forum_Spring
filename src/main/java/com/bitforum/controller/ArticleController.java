@@ -18,6 +18,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.ai.entity.AiRecommendLog;
+import com.bitforum.ai.recommend.RecommendService;
+import com.bitforum.ai.recommend.RecommendService.RecommendRequest;
+import com.bitforum.ai.recommend.RecommendService.RecommendResult;
+import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
 import com.bitforum.common.HotArticle;
 import com.bitforum.common.Result;
 import com.bitforum.dto.ArticleDraftRequest;
@@ -48,6 +53,12 @@ public class ArticleController {
     private NotificationService notificationService;
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private RecommendService recommendService;
+
+    /** 相关推荐一次最多返回多少条：防止前端传个大数把接口当列表接口用。 */
+    private static final int MAX_RECOMMEND_LIMIT = 10;
 
     @PostMapping("/publish")
     @Operation(summary = "提交文章审核", description = "需要登录。保留 publish 路径，当前语义为提交审核", security = @SecurityRequirement(name = "bearerAuth"))
@@ -234,6 +245,29 @@ public class ArticleController {
             article.setLikeCount(redisService.getLikeCount(articleId).intValue());
         }
         return Result.ok("文章查找成功", article);
+    }
+
+    @GetMapping("/recommendations")
+    @Operation(summary = "查询文章的相关推荐",
+            description = """
+                    公开接口，**未登录也可访问**。
+                    推荐由三路召回（内容相似 / 近期热度 / 关注关系）+ RRF 融合排序产生，**排序完全由服务端决定**；
+                    未登录访客没有个人行为数据，自动退化为"内容相似 + 热度"两路。
+                    推荐理由由 AI 生成；AI 不可用时列表照常返回（只是没有理由），不影响主流程。""")
+    public Result<List<RecommendedArticle>> recommendations(
+            @RequestParam Long articleId,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long currentUserId = parseOptionalUserId(authorization);
+        int topN = limit == null || limit < 1 ? 5 : Math.min(limit, MAX_RECOMMEND_LIMIT);
+        try {
+            RecommendResult result = recommendService.recommend(new RecommendRequest(
+                    AiRecommendLog.SCENE_ARTICLE_DETAIL, currentUserId, articleId, topN, null));
+            return Result.ok("相关推荐查询成功", result.articles());
+        } catch (RuntimeException e) {
+            // 推荐是增强能力：任何失败都不应该让文章页报错，返回空列表由前端显示"暂无推荐"
+            return Result.ok("相关推荐暂不可用：" + e.getMessage(), List.of());
+        }
     }
 
     /**

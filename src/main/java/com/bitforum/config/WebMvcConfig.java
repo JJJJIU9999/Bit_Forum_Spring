@@ -50,7 +50,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         // M13 起：AI 助手全部接口都要求登录，
                         // 会话归属校验在 AiConversationService 内完成（越权返回 403）
                         "/api/ai/conversations",
-                        "/api/ai/conversations/**"
+                        "/api/ai/conversations/**",
+                        // M17：AI 助手的"相关帖子"推荐同样要求登录
+                        // （它需要 userId 做个性化；漏配会让 @RequestAttribute("userId") 直接 500）
+                        "/api/ai/recommendations"
                 );   
     }
 

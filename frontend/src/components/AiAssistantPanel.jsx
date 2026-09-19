@@ -5,6 +5,7 @@ import {
   createConversation,
   listConversations,
   listMessages,
+  recommendForQuery,
   sendMessage,
 } from '../api/aiApi.js'
 import MarkdownText from './MarkdownText.jsx'
@@ -18,6 +19,8 @@ function AiAssistantPanel() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  // M17：回答之后推荐的相关帖子。与消息自带的 citations（参考来源）互补
+  const [relatedPosts, setRelatedPosts] = useState([])
   const [error, setError] = useState('')
   const bottomRef = useRef(null)
 
@@ -48,9 +51,11 @@ function AiAssistantPanel() {
     try {
       const result = await listMessages(id)
       setMessages(result.data || [])
+    setRelatedPosts([])
     } catch (e) {
       setError(e.message)
       setMessages([])
+    setRelatedPosts([])
     }
   }
 
@@ -62,8 +67,22 @@ function AiAssistantPanel() {
       setConversations((prev) => [created, ...prev])
       setActiveId(created.id)
       setMessages([])
+    setRelatedPosts([])
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  /**
+   * 用刚问的问题去要一批"相关帖子"。
+   * 失败就清空，绝不影响对话本身 —— 推荐只是附加内容。
+   */
+  async function loadRelatedPosts(query) {
+    try {
+      const result = await recommendForQuery(query, 3)
+      setRelatedPosts(result.data || [])
+    } catch {
+      setRelatedPosts([])
     }
   }
 
@@ -93,6 +112,7 @@ function AiAssistantPanel() {
       setMessages((prev) => [...prev, result.data])
       // 会话标题可能因首轮提问而变化，重新拉取列表同步
       refreshConversations()
+      loadRelatedPosts(content)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -185,6 +205,23 @@ function AiAssistantPanel() {
             )}
           </div>
         ))}
+
+        {/* M17：回答末尾推荐相关帖子。只在有结果时出现，且回答生成中不显示旧的推荐 */}
+        {relatedPosts.length > 0 && !sending && (
+          <div className="ai-related">
+            <span className="ai-citations-label">相关帖子</span>
+            <ul>
+              {relatedPosts.map((item) => (
+                <li key={item.articleId}>
+                  <Link to={`/articles/${item.articleId}`} className="ai-citation-link">
+                    {item.title}
+                  </Link>
+                  {item.reason && <small className="ai-related-reason">{item.reason}</small>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {sending && <div className="ai-message ai-message-assistant ai-typing">正在生成回答…</div>}
 
