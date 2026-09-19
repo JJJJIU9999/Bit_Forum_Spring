@@ -12,17 +12,18 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M15 进行中**：嵌入模型验证（T3）与向量库接入（V14）已完成，分块/索引/检索未开始 |
+| 当前阶段 | **M15 进行中**：模型验证、向量库接入、分块与索引链路已完成；检索与引用未开始 |
 | 最新 Flyway 迁移 | `V14__add_ai_kb_document.sql`（`ai_kb_document`、`ai_kb_chunk`） |
-| 模块完成度 | M13、M14 已完成；M15 前置与基础设施完成、业务实现未开始；M16-M18 未开始 |
-| 当前主线 | M15 RAG 知识库与向量检索（下一步：分块与索引入库） |
+| 模块完成度 | M13、M14 已完成；M15 索引链路可用（手动重建）、检索未开始；M16-M18 未开始 |
+| 当前主线 | M15 RAG 知识库与向量检索（下一步：`RagService` 检索 + 引用注入） |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
 | 数据库状态 | MySQL 8.0.46，Flyway V1-V14 全部 success |
-| 测试状态 | **250 项：249 通过 + 1 项条件跳过**（选型探针另有 1 项默认跳过，不计入） |
+| 测试状态 | **265 项：264 通过 + 1 项条件跳过**（选型探针另有 1 项默认跳过，不计入） |
 | 嵌入模型 | 已定稿 `bge-base-zh-v1.5`（768 维，量化 102MB，缓存于 `~/.cache/bitforum-onnx`） |
 | 向量索引 | `bitforum-kb`（HNSW / FLOAT32 / DIM 768 / COSINE），元数据字段已声明 |
+| 知识库状态 | 可通过 `POST /api/admin/ai/kb/rebuild` 全量重建；集成测试收尾会清空，需要时重建 |
 | 真实调用验证 | 已通过：AI 能调用搜索工具返回真实站内文章；能执行点赞写操作 |
-| 待办 | M15 第二步：`ArticleChunkingService`、`KbIndexService`（含 RabbitMQ 异步索引） |
+| 待办 | M15 第三步：`RagService`、QaAgent 引用注入、RabbitMQ 异步索引、管理端统计页 |
 
 ## 总体进度
 
@@ -736,8 +737,68 @@ handoff 第三节指出：DeepSeek 不提供 embedding 接口，RAG 的 `Embeddi
 jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**而不是 `Map`，
 首版按 Map 解析导致一处断言失败，已改为按相邻两元素配对解析。
 
-### 下一步：M15 主体第二步（待用户确认）
+### M15-3：文章分块与索引服务（手动全量重建）
 
-- `ArticleChunkingService`：按段落切块（附标题上下文），产出带元数据的片段
-- `KbIndexService`：全量重建 + 增量更新，写入向量库与两张表（用 `content_hash` 跳过未变化的文章）
+- **Status:** complete
+
+#### 产出
+
+| 类型 | 文件 | 说明 |
+| --- | --- | --- |
+| 实体 | `ai/entity/AiKbDocument.java`、`ai/entity/AiKbChunk.java` | 对应 V14 两张表 |
+| Mapper | `ai/mapper/AiKbDocumentMapper.java`、`ai/mapper/AiKbChunkMapper.java` | 所在包已在 `@MapperScan` 列表中，无需改扫描配置 |
+| 服务 | `ai/rag/ArticleChunkingService.java` | 按段落/句子切块，带标题上下文与相邻重叠 |
+| 服务 | `ai/rag/KbIndexService.java` | 单篇索引、全量重建、移除、统计 |
+| 接口 | `controller/AdminAiKbController.java` | `POST /api/admin/ai/kb/rebuild`、`GET /api/admin/ai/kb/stats` |
+| 配置 | `application.yml` | `bitforum.ai.rag.*`：模型标识、分块长度、重叠长度 |
+| 测试 | `ArticleChunkingServiceTest`（6 项）、`KbIndexServiceTest`（5 项）、`AdminAiKbControllerTest`（4 项） | |
+
+#### 分块参数与依据
+
+| 参数 | 取值 | 依据 |
+| --- | --- | --- |
+| 分块长度 | 350 字 | bge-base-zh-v1.5 有效输入约 512 token，中文约 1 字 1 token，留余量避免模型侧静默截断 |
+| 重叠长度 | 50 字 | 防止一个完整结论正好落在切分边界被切断 |
+| 标题前缀 | 每块前置 `《标题》` | 单块被召回时模型看不到其它块，标题提供自解释的上下文 |
+| 超长无标点段落 | 按目标长度硬切 | 否则单块会超出模型输入上限 |
+
+#### 一致性策略
+
+向量写入（Redis）与元数据写入（MySQL）无法放进同一个事务，因此顺序固定为
+「先删旧向量与旧分块 → 落 document 行 → 写向量 → 写分块记录 → 标记 INDEXED」；
+任一步失败就把文档标记为 `FAILED` 并记录 `last_error`，由下次重建修复。
+检索侧只信 MySQL 中的 `INDEXED` 记录，半成品不会被当作可用知识。
+
+增量更新用内容指纹判定：指纹与嵌入模型都未变化时直接跳过（`SKIPPED`），
+避免文章每次保存都重新计算向量；指纹变化时按分块表保存的 `vector_id` 精确删除旧向量再重建。
+
+#### 验证记录
+
+| 验证项 | 结果 |
+| --- | --- |
+| **验收：统计数一致** | 全量重建后 `indexedDocuments=6` == `publishedArticles=6`（已发布 6 篇 → 索引 6、跳过 0、失败 0，231 ms） |
+| 检索召回 | 新索引的文章可被语义查询命中（`filterExpression("status == 'PUBLISHED'")`） |
+| 指纹跳过 | 内容与模型未变化 → 第二次索引返回 `SKIPPED` |
+| 内容变化 | 内容修改后重新索引，且不残留旧内容的分块记录 |
+| 下架移除 | 状态改为 `OFFLINE` 后再次索引 → `REMOVED`，文档与分块记录被删除，向量删除后不再被召回 |
+| 分块边界 | 单块长度不超过「目标长度 + 重叠 + 标题前缀」上限 |
+| 接口权限 | 匿名 401、普通用户 403、管理员 200 且返回 `Result` 结构 |
+| `mvn test`（全量，清空报告后重跑） | **Tests run: 265, Failures: 0, Errors: 0, Skipped: 1** |
+| `npm run build` | 通过，1889 模块 |
+
+#### 修复的缺陷
+
+分块合并时未把换行分隔符计入长度，导致单块比目标长度多 1 个字符（由边界测试暴露），已修正。
+
+#### 覆盖说明
+
+`AdminAiKbControllerTest` 只验证未授权路径与 `stats` 接口，**不触发真实重建** ——
+重建会写入 Redis 向量，而 `@Transactional` 只能回滚 MySQL，会留下孤儿向量；
+重建的业务正确性由 `KbIndexServiceTest` 覆盖。
+
+### 下一步：M15 第三步（待用户确认）
+
+- `RagService`：语义检索（只取已发布、限制 topK 与片段长度以控制 token）
+- 把检索结果注入 QaAgent 上下文，回答带可点击的原帖引用
 - 异步索引走 RabbitMQ（复用既有 DLQ + 手动 ACK + Redis 幂等套路）
+- 管理端知识库统计页

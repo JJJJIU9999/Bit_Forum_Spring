@@ -94,6 +94,17 @@ bitforum:
   article-metric-sync:
     fixed-delay: ${ARTICLE_METRIC_SYNC_FIXED_DELAY:300000}
     initial-delay: ${ARTICLE_METRIC_SYNC_INITIAL_DELAY:300000}
+  ai:
+    rag:
+      # M15：RAG 知识库参数
+      # 记录当前嵌入模型标识，写入 ai_kb_document.embedding_model；
+      # 换模型后据此识别需要全量重建的历史数据（向量维度与语义空间都会变）。
+      embedding-model-name: ${BITFORUM_EMBEDDING_MODEL:bge-base-zh-v1.5}
+      # 分块目标长度（字符）。bge-base-zh-v1.5 有效输入约 512 token，
+      # 中文约 1 字 1 token，350 字留出余量，避免模型侧静默截断。
+      chunk-size: ${BITFORUM_KB_CHUNK_SIZE:350}
+      # 相邻分块的重叠长度，防止完整结论正好落在切分边界被切断。
+      chunk-overlap: ${BITFORUM_KB_CHUNK_OVERLAP:50}
 
 management:
   endpoints:
