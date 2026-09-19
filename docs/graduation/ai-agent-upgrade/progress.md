@@ -81,8 +81,10 @@
 - [x] 创建 `docs/graduation/ai-agent-upgrade/task_plan.md`（完整计划书，含架构、六个模块、数据库变更、测试策略、时间表、风险评估）
 - [x] 创建 `docs/graduation/ai-agent-upgrade/findings.md`（全部勘察证据与技术决策依据）
 - [x] 创建 `docs/graduation/ai-agent-upgrade/progress.md`（本文）
-- [ ] 更新 `docs/graduation/毕业设计文档总览.md`（项目定位 + M13-M18 + 更正过期分支信息）
-- [ ] 更新 `docs/graduation/毕业设计进度.md`（同步新模块与分支策略）
+- [x] 更新 `docs/graduation/毕业设计文档总览.md`（项目定位 + M13-M18 + 更正过期分支信息）
+      —— **2026-09-19 M18 收尾时完成**：M13-M18 状态改为已完成、补齐交付要点与诚实边界、更正过期路径
+- [x] 更新 `docs/graduation/毕业设计进度.md`（同步新模块与分支策略）
+      —— **2026-09-19 完成**：快照/总体进度/下一步/风险清单同步为 M13-M18 已完成
 
 #### 关键结论
 
