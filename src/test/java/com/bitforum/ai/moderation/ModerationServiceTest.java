@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.bitforum.ai.entity.AiModerationRecord;
 import com.bitforum.ai.mapper.AiModerationRecordMapper;
+import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.service.ArticleService;
 
 /**
@@ -166,7 +167,8 @@ class ModerationServiceTest {
     @Test
     void analysisFailureShouldFallBackToHumanReview() {
         when(moderationAgent.analyze(ModerationTargetType.ARTICLE, CONTENT))
-                .thenReturn(ModerationAgent.ModerationOutcome.degraded("模型超时", "deepseek-flash", 5000L));
+                .thenReturn(ModerationAgent.ModerationOutcome.degraded(
+                        TraceDegradeReason.LLM_TIMEOUT, "模型超时", "deepseek-flash", 5000L));
 
         ModerationService.ModerationResult result =
                 service(true, 0.9, 0.2).moderate(ModerationTargetType.ARTICLE, TARGET_ID, CONTENT, AUTHOR_ID);

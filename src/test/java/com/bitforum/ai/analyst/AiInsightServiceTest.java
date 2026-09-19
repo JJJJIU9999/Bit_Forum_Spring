@@ -23,6 +23,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.bitforum.ai.entity.AiInsightReport;
 import com.bitforum.ai.mapper.AiInsightReportMapper;
+import com.bitforum.ai.trace.TraceDegradeReason;
 
 /**
  * 运营洞察存取的单元测试（M17）。
@@ -77,9 +78,11 @@ class AiInsightServiceTest {
     /** 生成失败也要落库，并且**保留统计快照**：数据是取到了的，只是模型这一步失败。 */
     @Test
     void shouldPersistFailureWithSnapshotForTroubleshooting() {
+        // M18：降级结果的文案统一由 AiDegradeGuard 按原因码给出（全站同一套说法），
+        // 因此这里用统一文案而不是各 Agent 自造的一句话
         AnalystAgent.InsightOutcome degraded = AnalystAgent.InsightOutcome.degraded(
-                "{\"userStats\":{\"total\":5}}", LocalDateTime.now(), "deepseek-flash", 120L,
-                "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）");
+                TraceDegradeReason.AI_DISABLED, "{\"userStats\":{\"total\":5}}", LocalDateTime.now(),
+                "deepseek-flash", 120L, TraceDegradeReason.userMessage(TraceDegradeReason.AI_DISABLED));
 
         service.save(degraded, AiInsightReport.TRIGGER_MANUAL, 13L);
 
@@ -89,13 +92,14 @@ class AiInsightServiceTest {
 
         assertEquals(AiInsightReport.STATUS_FAILED, saved.getStatus());
         assertNotNull(saved.getDataSnapshot(), "失败时统计快照仍应保留，便于排查与重试");
-        assertTrue(saved.getErrorMessage().contains("ChatClient 不可用"));
+        assertEquals(TraceDegradeReason.userMessage(TraceDegradeReason.AI_DISABLED), saved.getErrorMessage());
     }
 
     /** 触发方式缺省为手动（调用方忘了传时不应写入 null）。 */
     @Test
     void shouldDefaultTriggerTypeToManual() {
-        service.save(AnalystAgent.InsightOutcome.degraded(null, LocalDateTime.now(), "m", 1L, "失败"),
+        service.save(AnalystAgent.InsightOutcome.degraded(TraceDegradeReason.LLM_ERROR, null,
+                        LocalDateTime.now(), "m", 1L, "失败"),
                 null, null);
 
         ArgumentCaptor<AiInsightReport> captor = ArgumentCaptor.forClass(AiInsightReport.class);

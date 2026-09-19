@@ -9,6 +9,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import com.bitforum.ai.degrade.AiDegradeGuard;
+import com.bitforum.ai.trace.TraceDegradeReason;
+
 /**
  * 内容审核 Agent（M16）。
  *
@@ -46,19 +49,22 @@ public class ModerationAgent {
             Integer completionTokens,
             Integer totalTokens,
             boolean degraded,
-            String errorMessage) {
+            String errorMessage,
+            /** 降级原因码（M18）；正常结果与"内容为空"之外的降级都会带上，见 TraceDegradeReason */
+            String degradeReason) {
 
         public static ModerationOutcome of(ModerationAssessment assessment, String model, long latencyMillis,
                                            Integer promptTokens, Integer completionTokens,
                                            Integer totalTokens) {
             return new ModerationOutcome(assessment, model, latencyMillis, promptTokens, completionTokens,
-                    totalTokens, false, null);
+                    totalTokens, false, null, null);
         }
 
         /** 分析失败：不产生判断，由正常人工流程兜底 */
-        public static ModerationOutcome degraded(String errorMessage, String model, long latencyMillis) {
+        public static ModerationOutcome degraded(String reason, String errorMessage, String model,
+                                                 long latencyMillis) {
             return new ModerationOutcome(null, model, latencyMillis, null, null, null, true,
-                    abbreviate(errorMessage));
+                    abbreviate(errorMessage), reason);
         }
 
         private static String abbreviate(String text) {
@@ -119,14 +125,17 @@ public class ModerationAgent {
     private final ObjectProvider<ChatClient> chatClientProvider;
     private final String modelName;
     private final int maxContentChars;
+    private final AiDegradeGuard degradeGuard;
 
     public ModerationAgent(
             ObjectProvider<ChatClient> chatClientProvider,
             @Value("${bitforum.ai.moderation.model-name:deepseek-flash}") String modelName,
-            @Value("${bitforum.ai.moderation.max-content-chars:2000}") int maxContentChars) {
+            @Value("${bitforum.ai.moderation.max-content-chars:2000}") int maxContentChars,
+            AiDegradeGuard degradeGuard) {
         this.chatClientProvider = chatClientProvider;
         this.modelName = modelName;
         this.maxContentChars = maxContentChars;
+        this.degradeGuard = degradeGuard;
     }
 
     /**
@@ -139,14 +148,16 @@ public class ModerationAgent {
         long startedAt = System.currentTimeMillis();
 
         if (!StringUtils.hasText(content)) {
-            return ModerationOutcome.degraded("内容为空，无需审核", modelName, 0L);
+            return ModerationOutcome.degraded(TraceDegradeReason.NOTHING_TO_DO,
+                    "内容为空，无需审核", modelName, 0L);
         }
 
         ChatClient chatClient = chatClientProvider.getIfAvailable();
         if (chatClient == null) {
-            return ModerationOutcome.degraded(
-                    "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）",
-                    modelName,
+            // M18：降级文案与原因码由 Guard 统一给出（"为什么降级"在全站是同一套说法）
+            String message = degradeGuard.degrade(TraceDegradeReason.AI_DISABLED,
+                    "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）");
+            return ModerationOutcome.degraded(TraceDegradeReason.AI_DISABLED, message, modelName,
                     System.currentTimeMillis() - startedAt);
         }
 
@@ -163,7 +174,9 @@ public class ModerationAgent {
             ChatResponse response = responseEntity == null ? null : responseEntity.response();
             ModerationAssessment assessment = responseEntity == null ? null : responseEntity.entity();
             if (assessment == null) {
-                return ModerationOutcome.degraded("模型返回空结果", modelName, latency);
+                return ModerationOutcome.degraded(TraceDegradeReason.EMPTY_RESPONSE,
+                        degradeGuard.degrade(TraceDegradeReason.EMPTY_RESPONSE, "模型返回空结果"),
+                        modelName, latency);
             }
 
             ModerationAssessment normalized = normalize(assessment);
@@ -176,7 +189,9 @@ public class ModerationAgent {
         } catch (RuntimeException exception) {
             long latency = System.currentTimeMillis() - startedAt;
             log.error("内容审核分析失败：type={}，content={}", targetType, abbreviate(content), exception);
-            return ModerationOutcome.degraded(exception.getMessage(), modelName, latency);
+            String reason = degradeGuard.classify(exception);
+            return ModerationOutcome.degraded(reason,
+                    degradeGuard.degrade(reason, exception.getMessage()), modelName, latency);
         }
     }
 

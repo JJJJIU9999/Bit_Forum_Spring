@@ -378,11 +378,8 @@ public class RecommendService {
         traceRecorder.step(TraceStepType.LLM_CALL, reasonOutcome.model(),
                 "为 " + reasonOutcome.reasonsByArticleId().size() + " 条推荐生成理由",
                 reasonOutcome.latencyMillis(), reasonOutcome.totalTokens());
-        if (reasonOutcome.degraded()) {
-            // 排序结果仍然可用（Java 定序），降级的只是"解释"这一层 ——
-            // 这正是 M17 定下的设计，轨迹要把这一点如实记下来
-            traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, reasonOutcome.errorMessage());
-        }
+        // 降级原因由 RecommendReasonAgent 内部的 AiDegradeGuard 统一记录（M18 模块 3），
+        // 这里不再重复记 —— 降级记录的入口收敛到 Guard 一处
 
         long latency = System.currentTimeMillis() - startedAt;
         boolean degraded = reasonOutcome.degraded();
@@ -413,7 +410,9 @@ public class RecommendService {
                                                                List<RecommendedArticle> articles,
                                                                boolean queryBased) {
         if (!reasonEnabled) {
-            return RecommendReasonAgent.ReasonOutcome.degraded(modelName, 0L,
+            // 配置关闭属于"AI 能力未启用"，用统一原因码而不是自造一句话
+            return RecommendReasonAgent.ReasonOutcome.degraded(
+                    TraceDegradeReason.AI_DISABLED, modelName, 0L,
                     "推荐理由生成已关闭（bitforum.ai.recommend.reason-enabled=false）");
         }
         return reasonAgent.generate(articles, describeUser(request.userId()), queryBased);

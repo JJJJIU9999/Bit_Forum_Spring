@@ -33,6 +33,7 @@ import com.bitforum.ai.recommend.RecommendRecallService.RecalledArticle;
 import com.bitforum.ai.recommend.RecommendService.RecommendRequest;
 import com.bitforum.ai.recommend.RecommendService.RecommendResult;
 import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
+import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleFavorite;
@@ -84,7 +85,8 @@ class RecommendServiceTest {
         reasonAgent = mock(RecommendReasonAgent.class);
         // 默认按"理由生成降级"处理：这样既有用例测的仍是确定性排序链路
         when(reasonAgent.generate(any(), any(), anyBoolean())).thenReturn(
-                RecommendReasonAgent.ReasonOutcome.degraded("deepseek-flash", 0L, "测试中不生成理由"));
+                RecommendReasonAgent.ReasonOutcome.degraded(TraceDegradeReason.AI_DISABLED,
+                        "deepseek-flash", 0L, "测试中不生成理由"));
         articleMapper = mock(ArticleMapper.class);
         favoriteMapper = mock(ArticleFavoriteMapper.class);
         categoryMapper = mock(CategoryMapper.class);

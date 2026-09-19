@@ -13,7 +13,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.bitforum.ai.degrade.AiDegradeGuard;
 import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
+import com.bitforum.ai.trace.TraceDegradeReason;
 
 /**
  * 推荐理由生成（M17）。
@@ -50,18 +52,21 @@ public class RecommendReasonAgent {
      */
     public record ReasonOutcome(Map<Long, String> reasonsByArticleId, String model,
                                 Integer promptTokens, Integer completionTokens, Integer totalTokens,
-                                long latencyMillis, boolean degraded, String errorMessage) {
+                                long latencyMillis, boolean degraded, String errorMessage,
+                                /** 降级原因码（M18）；正常结果为 null */
+                                String degradeReason) {
 
         public static ReasonOutcome of(Map<Long, String> reasons, String model,
                                        Integer promptTokens, Integer completionTokens, Integer totalTokens,
                                        long latencyMillis) {
             return new ReasonOutcome(Map.copyOf(reasons), model, promptTokens, completionTokens, totalTokens,
-                    latencyMillis, false, null);
+                    latencyMillis, false, null, null);
         }
 
-        public static ReasonOutcome degraded(String model, long latencyMillis, String errorMessage) {
+        public static ReasonOutcome degraded(String reason, String model, long latencyMillis,
+                                             String errorMessage) {
             return new ReasonOutcome(Map.of(), model, null, null, null, latencyMillis, true,
-                    abbreviate(errorMessage));
+                    abbreviate(errorMessage), reason);
         }
 
         public String reasonFor(Long articleId) {
@@ -101,14 +106,17 @@ public class RecommendReasonAgent {
     private final ObjectProvider<ChatClient> chatClientProvider;
     private final String modelName;
     private final int maxArticles;
+    private final AiDegradeGuard degradeGuard;
 
     public RecommendReasonAgent(
             ObjectProvider<ChatClient> chatClientProvider,
             @Value("${bitforum.ai.recommend.model-name:deepseek-flash}") String modelName,
-            @Value("${bitforum.ai.recommend.reason-max-articles:10}") int maxArticles) {
+            @Value("${bitforum.ai.recommend.reason-max-articles:10}") int maxArticles,
+            AiDegradeGuard degradeGuard) {
         this.chatClientProvider = chatClientProvider;
         this.modelName = modelName;
         this.maxArticles = Math.max(1, maxArticles);
+        this.degradeGuard = degradeGuard;
     }
 
     /** 模型返回的结构：只含序号与理由，**刻意不含文章 id**。 */
@@ -137,14 +145,17 @@ public class RecommendReasonAgent {
     public ReasonOutcome generate(List<RecommendedArticle> articles, String userProfile, boolean queryBased) {
         long startedAt = System.currentTimeMillis();
         if (articles == null || articles.isEmpty()) {
-            return ReasonOutcome.degraded(modelName, 0L, "推荐列表为空，无需生成理由");
+            return ReasonOutcome.degraded(TraceDegradeReason.NOTHING_TO_DO, modelName, 0L,
+                    "推荐列表为空，无需生成理由");
         }
 
         ChatClient chatClient = chatClientProvider.getIfAvailable();
         if (chatClient == null) {
             log.debug("ChatClient 不可用，推荐理由走降级（推荐列表照常返回）");
-            return ReasonOutcome.degraded(modelName, System.currentTimeMillis() - startedAt,
-                    "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）");
+            String reason = TraceDegradeReason.AI_DISABLED;
+            return ReasonOutcome.degraded(reason, modelName, System.currentTimeMillis() - startedAt,
+                    degradeGuard.degrade(reason,
+                            "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）"));
         }
 
         // 只对前 N 条生成理由：超出的部分留给前端按"无理由"处理，避免一次调用过长
@@ -165,12 +176,14 @@ public class RecommendReasonAgent {
             ReasonList result = responseEntity == null ? null : responseEntity.entity();
             ChatResponse response = responseEntity == null ? null : responseEntity.response();
             if (result == null || result.reasons() == null || result.reasons().isEmpty()) {
-                return ReasonOutcome.degraded(modelName, latency, "模型返回空结果");
+                return ReasonOutcome.degraded(TraceDegradeReason.EMPTY_RESPONSE, modelName, latency,
+                        degradeGuard.degrade(TraceDegradeReason.EMPTY_RESPONSE, "模型返回空结果"));
             }
 
             Map<Long, String> reasons = mapReasons(result.reasons(), target);
             if (reasons.isEmpty()) {
-                return ReasonOutcome.degraded(modelName, latency, "模型返回的序号全部越界");
+                return ReasonOutcome.degraded(TraceDegradeReason.EMPTY_RESPONSE, modelName, latency,
+                        degradeGuard.degrade(TraceDegradeReason.EMPTY_RESPONSE, "模型返回的序号全部越界"));
             }
 
             log.info(">>> 推荐理由生成完成：请求 {} 条，命中 {} 条，耗时 {} ms",
@@ -181,7 +194,9 @@ public class RecommendReasonAgent {
         } catch (RuntimeException exception) {
             long latency = System.currentTimeMillis() - startedAt;
             log.warn("推荐理由生成失败，降级为无理由推荐：{}", exception.getMessage());
-            return ReasonOutcome.degraded(modelName, latency, exception.getMessage());
+            String reason = degradeGuard.classify(exception);
+            return ReasonOutcome.degraded(reason, modelName, latency,
+                    degradeGuard.degrade(reason, exception.getMessage()));
         }
     }
 

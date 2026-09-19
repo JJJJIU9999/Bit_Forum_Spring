@@ -16,6 +16,7 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
+import com.bitforum.ai.degrade.AiDegradeGuard;
 import com.bitforum.ai.rag.RagService;
 import com.bitforum.ai.tool.AgentContextKeys;
 import com.bitforum.ai.tool.ArticleTools;
@@ -100,17 +101,20 @@ public class QaAgent implements Agent {
     private final UserInteractionTools interactionTools;
     private final RagService ragService;
     private final TraceRecorder traceRecorder;
+    private final AiDegradeGuard degradeGuard;
 
     public QaAgent(ObjectProvider<ChatClient> chatClientProvider,
                    ArticleTools articleTools,
                    UserInteractionTools interactionTools,
                    RagService ragService,
-                   TraceRecorder traceRecorder) {
+                   TraceRecorder traceRecorder,
+                   AiDegradeGuard degradeGuard) {
         this.chatClientProvider = chatClientProvider;
         this.articleTools = articleTools;
         this.interactionTools = interactionTools;
         this.ragService = ragService;
         this.traceRecorder = traceRecorder;
+        this.degradeGuard = degradeGuard;
     }
 
     @Override
@@ -122,10 +126,10 @@ public class QaAgent implements Agent {
     public AgentResponse execute(AgentContext context, List<Message> history) {
         ChatClient chatClient = chatClientProvider.getIfAvailable();
         if (chatClient == null) {
-            // AI 未启用（未配置 API Key）时不抛异常，返回降级文案，保证论坛主流程可用
-            log.debug("ChatClient 不可用，QA 走降级回答");
-            traceRecorder.degrade(TraceDegradeReason.AI_DISABLED, null);
-            return AgentResponse.degraded("AI 助手当前未启用（未配置 DEEPSEEK_API_KEY），请联系管理员。");
+            // AI 未启用（未配置 API Key）时不抛异常，返回统一降级文案，保证论坛主流程可用。
+            // M18：文案与原因码都交给 AiDegradeGuard —— 同一个故障在任何 Agent、任何场景下
+            // 都是同一句话，用户能看懂"为什么降级"
+            return AgentResponse.degraded(degradeGuard.degrade(TraceDegradeReason.AI_DISABLED));
         }
 
         // M15：先检索站内知识库。检索失败不影响对话，只是退化为"无引用回答"。
@@ -179,18 +183,18 @@ public class QaAgent implements Agent {
 
             if (content == null || content.isBlank()) {
                 log.warn("模型返回空内容，conversationId={}", context.conversationId());
-                traceRecorder.degrade(TraceDegradeReason.EMPTY_RESPONSE, null);
-                return AgentResponse.degraded("AI 暂时没有生成有效回答，请稍后重试或换一种问法。");
+                return AgentResponse.degraded(degradeGuard.degrade(TraceDegradeReason.EMPTY_RESPONSE));
             }
 
             // 引用来源独立于模型输出：即使模型忘记标注编号，前端仍能展示可点击的原帖链接
             return AgentResponse.of(content, promptTokens(response),
                     completionTokens(response), totalTokens(response), retrieval.citations());
         } catch (RuntimeException e) {
-            // 大模型不可用（网络、额度、限流）不应影响论坛其他功能
+            // 大模型不可用（网络、额度、限流）不应影响论坛其他功能。
+            // 异常分类（超时 / 其它）由 Guard 统一判定，这里不再各写一套字符串判断
             log.error("调用大模型失败，conversationId={}", context.conversationId(), e);
-            traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, null);
-            return AgentResponse.degraded("AI 服务暂时不可用，请稍后重试。");
+            return AgentResponse.degraded(
+                    degradeGuard.degrade(degradeGuard.classify(e), e.getMessage()));
         }
     }
 
@@ -205,7 +209,7 @@ public class QaAgent implements Agent {
             log.warn("知识库检索失败，本轮降级为无检索回答", exception);
             // 检索失败只是"没有引用"，回答本身仍然可用 —— 但这仍是一种降级，
             // 必须让用户/管理员能看到原因（M18 验收第 3 条）
-            traceRecorder.degrade(TraceDegradeReason.RETRIEVE_FAILED, null);
+            degradeGuard.degrade(TraceDegradeReason.RETRIEVE_FAILED, exception.getMessage());
             return new RagService.RetrievalResult(List.of(), List.of(), 0);
         }
     }

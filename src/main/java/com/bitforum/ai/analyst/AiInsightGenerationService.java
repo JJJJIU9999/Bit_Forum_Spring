@@ -98,9 +98,8 @@ public class AiInsightGenerationService {
                     "prompt=" + outcome.promptTokens() + ", completion=" + outcome.completionTokens()
                             + "，工具调用 " + outcome.toolCallCount() + " 次",
                     outcome.latencyMillis(), outcome.totalTokens());
-            if (outcome.degraded()) {
-                traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, outcome.errorMessage());
-            }
+            // 降级原因由 AnalystAgent 内部的 AiDegradeGuard 统一记录（M18 模块 3），
+            // 这里不再重复记 —— 降级记录入口收敛到 Guard 一处
             traceRecorder.finish(outcome.model(), outcome.promptTokens(), outcome.completionTokens(),
                     outcome.totalTokens());
         } catch (RuntimeException exception) {

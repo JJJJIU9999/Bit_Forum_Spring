@@ -11,6 +11,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.bitforum.ai.degrade.AiDegradeGuard;
+import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.dto.AdminDashboardSummaryResponse;
 import com.bitforum.service.AdminDashboardService;
@@ -63,20 +65,22 @@ public class AnalystAgent {
             long latencyMillis,
             int toolCallCount,
             boolean degraded,
-            String errorMessage) {
+            String errorMessage,
+            /** 降级原因码（M18）；正常结果为 null，见 TraceDegradeReason */
+            String degradeReason) {
 
         public static InsightOutcome of(String content, String dataSnapshot, LocalDateTime dataTime,
                                         String model, Integer promptTokens, Integer completionTokens,
                                         Integer totalTokens, long latencyMillis, int toolCallCount) {
             return new InsightOutcome(content, dataSnapshot, dataTime, model, promptTokens,
-                    completionTokens, totalTokens, latencyMillis, toolCallCount, false, null);
+                    completionTokens, totalTokens, latencyMillis, toolCallCount, false, null, null);
         }
 
         /** 生成失败：正文为空，但统计快照仍然保留 */
-        public static InsightOutcome degraded(String dataSnapshot, LocalDateTime dataTime, String model,
-                                              long latencyMillis, String errorMessage) {
+        public static InsightOutcome degraded(String reason, String dataSnapshot, LocalDateTime dataTime,
+                                              String model, long latencyMillis, String errorMessage) {
             return new InsightOutcome(null, dataSnapshot, dataTime, model, null, null, null,
-                    latencyMillis, 0, true, abbreviate(errorMessage));
+                    latencyMillis, 0, true, abbreviate(errorMessage), reason);
         }
 
         private static String abbreviate(String text) {
@@ -108,17 +112,20 @@ public class AnalystAgent {
     private final ObjectMapper objectMapper;
     private final String modelName;
     private final TraceRecorder traceRecorder;
+    private final AiDegradeGuard degradeGuard;
 
     public AnalystAgent(ObjectProvider<ChatClient> chatClientProvider,
                         AdminDashboardService dashboardService,
                         ObjectMapper objectMapper,
                         @Value("${bitforum.ai.analyst.model-name:deepseek-flash}") String modelName,
-                        TraceRecorder traceRecorder) {
+                        TraceRecorder traceRecorder,
+                        AiDegradeGuard degradeGuard) {
         this.chatClientProvider = chatClientProvider;
         this.dashboardService = dashboardService;
         this.objectMapper = objectMapper;
         this.modelName = modelName;
         this.traceRecorder = traceRecorder;
+        this.degradeGuard = degradeGuard;
     }
 
     /**
@@ -137,8 +144,11 @@ public class AnalystAgent {
             summary = dashboardService.summary();
         } catch (RuntimeException exception) {
             log.error("运营统计聚合失败，无法生成洞察", exception);
-            return InsightOutcome.degraded(null, dataTime, modelName,
-                    System.currentTimeMillis() - startedAt, exception.getMessage());
+            // 注意这里的原因码是 DATA_UNAVAILABLE 而不是 LLM_*：统计是本地聚合的，
+            // 失败与模型无关。把两者混为一谈会让"AI 到底出没出问题"看不出来
+            return InsightOutcome.degraded(TraceDegradeReason.DATA_UNAVAILABLE, null, dataTime, modelName,
+                    System.currentTimeMillis() - startedAt,
+                    degradeGuard.degrade(TraceDegradeReason.DATA_UNAVAILABLE, exception.getMessage()));
         }
 
         String snapshot;
@@ -146,17 +156,19 @@ public class AnalystAgent {
             snapshot = objectMapper.writeValueAsString(summary);
         } catch (JsonProcessingException exception) {
             log.error("运营统计快照序列化失败", exception);
-            return InsightOutcome.degraded(null, dataTime, modelName,
-                    System.currentTimeMillis() - startedAt, exception.getMessage());
+            return InsightOutcome.degraded(TraceDegradeReason.DATA_UNAVAILABLE, null, dataTime, modelName,
+                    System.currentTimeMillis() - startedAt,
+                    degradeGuard.degrade(TraceDegradeReason.DATA_UNAVAILABLE, exception.getMessage()));
         }
 
         // 2. 模型不可用时仍然保留快照：统计是本地算的，与 AI 是否可用无关
         ChatClient chatClient = chatClientProvider.getIfAvailable();
         if (chatClient == null) {
             log.debug("ChatClient 不可用，运营洞察走降级");
-            return InsightOutcome.degraded(snapshot, dataTime, modelName,
+            return InsightOutcome.degraded(TraceDegradeReason.AI_DISABLED, snapshot, dataTime, modelName,
                     System.currentTimeMillis() - startedAt,
-                    "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）");
+                    degradeGuard.degrade(TraceDegradeReason.AI_DISABLED,
+                            "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）"));
         }
 
         AnalystTools tools = new AnalystTools(summary);
@@ -180,7 +192,8 @@ public class AnalystAgent {
 
             if (content == null || content.isBlank()) {
                 log.warn("运营洞察生成结果为空");
-                return InsightOutcome.degraded(snapshot, dataTime, modelName, latency, "模型返回空内容");
+                return InsightOutcome.degraded(TraceDegradeReason.EMPTY_RESPONSE, snapshot, dataTime, modelName,
+                        latency, degradeGuard.degrade(TraceDegradeReason.EMPTY_RESPONSE, "模型返回空内容"));
             }
             if (tools.callCount() == 0) {
                 // 不失败，但要留痕：没看数据就写结论的报告不可信
@@ -196,7 +209,9 @@ public class AnalystAgent {
         } catch (RuntimeException exception) {
             long latency = System.currentTimeMillis() - startedAt;
             log.error("运营洞察生成失败", exception);
-            return InsightOutcome.degraded(snapshot, dataTime, modelName, latency, exception.getMessage());
+            String reason = degradeGuard.classify(exception);
+            return InsightOutcome.degraded(reason, snapshot, dataTime, modelName, latency,
+                    degradeGuard.degrade(reason, exception.getMessage()));
         }
     }
 

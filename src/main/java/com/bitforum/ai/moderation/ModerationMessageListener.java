@@ -82,10 +82,8 @@ public class ModerationMessageListener {
                             + "，targetId=" + message.getTargetId());
 
             ModerationService.ModerationResult result = analyze(message);
-            if (result != null && result.degraded()) {
-                // 审核降级：内容仍按正常人工流程处理，但必须让管理端看出"这次没有 AI 判断"
-                traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, result.errorMessage());
-            }
+            // 降级原因由 ModerationAgent 内部的 AiDegradeGuard 统一记录（M18 模块 3），
+            // 这里不再重复记 —— 降级记录入口收敛到 Guard 一处
             redisService.markMessageProcessed(message.getMessageId());
             channel.basicAck(deliveryTag, false);
 

@@ -24,6 +24,8 @@ public final class TraceDegradeReason {
     public static final String RETRIEVE_FAILED = "RETRIEVE_FAILED";
     /** 工具执行失败 */
     public static final String TOOL_FAILED = "TOOL_FAILED";
+    /** 本地数据不可用（统计聚合失败、快照序列化失败等）—— 与"模型失败"区分开 */
+    public static final String DATA_UNAVAILABLE = "DATA_UNAVAILABLE";
     /** 没有可用的输入（例如推荐列表为空，不需要生成理由） */
     public static final String NOTHING_TO_DO = "NOTHING_TO_DO";
     /** 超出 token 预算（TokenBudgetGuard，M18 时间充足才做） */
@@ -44,6 +46,7 @@ public final class TraceDegradeReason {
             case EMPTY_RESPONSE -> "AI 没有返回有效内容，请换一种问法或稍后重试。";
             case RETRIEVE_FAILED -> "站内检索暂时不可用，本次回答未引用站内文章。";
             case TOOL_FAILED -> "站内数据查询失败，本次回答可能不完整。";
+            case DATA_UNAVAILABLE -> "站内数据暂时不可用，本次结果不完整。";
             case NOTHING_TO_DO -> "当前没有需要 AI 处理的内容。";
             case BUDGET_EXCEEDED -> "已达到今日 AI 使用额度，请稍后再试。";
             default -> "AI 服务暂时不可用，已使用降级结果。";

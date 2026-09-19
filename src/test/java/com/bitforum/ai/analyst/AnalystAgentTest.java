@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -13,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
 
+import com.bitforum.ai.degrade.AiDegradeGuard;
+import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.dto.AdminDashboardSummaryResponse;
 import com.bitforum.dto.DashboardArticleStats;
@@ -34,6 +39,11 @@ class AnalystAgentTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** M18：轨迹记录器在"不依赖模型"的用例里不会被真正调用，用 mock 即可。 */
     private final TraceRecorder traceRecorder = mock(TraceRecorder.class);
+    /**
+     * M18：这里刻意用**真实的** AiDegradeGuard（只依赖 TraceRecorder，没有别的副作用），
+     * 因为"降级文案是否统一"正是本轮要验证的行为；用 mock 会把这个结论测没。
+     */
+    private final AiDegradeGuard degradeGuard = new AiDegradeGuard(traceRecorder);
 
     /** 模型不可用时：必须降级，但**统计快照仍然要有**（统计是本地算的，与 AI 无关）。 */
     @Test
@@ -42,7 +52,7 @@ class AnalystAgentTest {
         when(dashboardService.summary()).thenReturn(sampleSummary());
 
         AnalystAgent agent = new AnalystAgent(unavailableChatClient(), dashboardService,
-                objectMapper, "deepseek-flash", traceRecorder);
+                objectMapper, "deepseek-flash", traceRecorder, degradeGuard);
 
         AnalystAgent.InsightOutcome outcome = agent.analyze();
 
@@ -51,7 +61,9 @@ class AnalystAgentTest {
         assertNotNull(outcome.dataSnapshot(), "降级也必须保留统计快照：报告失败但依据要留痕");
         assertTrue(outcome.dataSnapshot().contains("\"total\":5"), "快照应包含真实统计：" + outcome.dataSnapshot());
         assertEquals(0, outcome.toolCallCount(), "降级时没有发生工具调用");
-        assertNotNull(outcome.errorMessage());
+        // M18：原因码 + 统一文案（全站一致，且不是各 Agent 自造的一句话）
+        assertEquals(TraceDegradeReason.AI_DISABLED, outcome.degradeReason());
+        assertEquals(TraceDegradeReason.userMessage(TraceDegradeReason.AI_DISABLED), outcome.errorMessage());
     }
 
     /** 统计聚合本身失败：不抛异常，返回降级结果（论坛主流程不能被 AI 拖垮）。 */
@@ -61,14 +73,19 @@ class AnalystAgentTest {
         when(dashboardService.summary()).thenThrow(new IllegalStateException("数据库连接中断"));
 
         AnalystAgent agent = new AnalystAgent(unavailableChatClient(), dashboardService,
-                objectMapper, "deepseek-flash", traceRecorder);
+                objectMapper, "deepseek-flash", traceRecorder, degradeGuard);
 
         AnalystAgent.InsightOutcome outcome = agent.analyze();
 
         assertTrue(outcome.degraded());
         assertNull(outcome.dataSnapshot(), "统计都没取到，快照应为空而不是伪造一份");
-        assertNotNull(outcome.errorMessage());
-        assertTrue(outcome.errorMessage().contains("数据库连接中断"), "失败原因应保留：" + outcome.errorMessage());
+        assertEquals(TraceDegradeReason.DATA_UNAVAILABLE, outcome.degradeReason(),
+                "统计失败是本地数据问题，不能记成模型失败");
+        assertEquals(TraceDegradeReason.userMessage(TraceDegradeReason.DATA_UNAVAILABLE),
+                outcome.errorMessage(), "对外的文案要统一，内部细节只进轨迹");
+        // 原始异常信息仍然要留痕（进了轨迹的 detail），否则排查时无迹可循
+        verify(traceRecorder).degrade(eq(TraceDegradeReason.DATA_UNAVAILABLE),
+                contains("数据库连接中断"));
     }
 
     /** 工具类：返回同一份快照，并统计调用次数（用于发现"模型没看数据就写结论"）。 */
@@ -90,7 +107,7 @@ class AnalystAgentTest {
         when(dashboardService.summary()).thenReturn(sampleSummary());
 
         AnalystAgent agent = new AnalystAgent(unavailableChatClient(), dashboardService,
-                objectMapper, "deepseek-flash", traceRecorder);
+                objectMapper, "deepseek-flash", traceRecorder, degradeGuard);
 
         String snapshot = agent.analyze().dataSnapshot();
 
