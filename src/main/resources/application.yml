@@ -137,6 +137,36 @@ bitforum:
       # 或真实流量数据重新估计阈值；当前数据不足以支撑"自动放行"这个会改变线上状态的动作。
       auto-approve-confidence: ${BITFORUM_MODERATION_AUTO_APPROVE_CONFIDENCE:0.99}
       auto-approve-max-risk: ${BITFORUM_MODERATION_AUTO_APPROVE_MAX_RISK:0.01}
+    recommend:
+      # ===== M17：智能推荐 =====
+      # 排序**完全由 Java 完成**（三路召回 → RRF 融合 → Top-N），LLM 不参与选文，
+      # 只负责生成基于真实信号的推荐理由（见 task_plan.md 的 M17 实施决策）。
+      #
+      # 每一路召回各取多少条候选。三路的并集就是融合排序的候选池：
+      # 太小会让 Top-N 被单一路径垄断，太大则纯属浪费。
+      recall-top-k: ${BITFORUM_RECOMMEND_RECALL_TOP_K:20}
+      # 最终返回给前端的推荐条数
+      top-n: ${BITFORUM_RECOMMEND_TOP_N:5}
+      # RRF 的平滑常数 k：score = Σ 1/(k + rank)，取 60 是原论文的常用值。
+      # 刻意**不引入"三路权重"**配置：权重需要数据才能定，
+      # 而当前数据不足以支撑（findings.md 6.15），RRF 只用排名、不需要调参。
+      rrf-k: ${BITFORUM_RECOMMEND_RRF_K:60}
+      # 候选过滤：只排除"作者本人"与"已收藏"（M17 实施决策）。
+      # 浏览过的不排除；**已点赞本阶段不支持** —— Redis 只有 article:{id}:likes
+      # （文章 → 用户集合），没有反向索引，反查需要 SCAN 全库（findings.md 6.16）。
+      exclude-own: ${BITFORUM_RECOMMEND_EXCLUDE_OWN:true}
+      exclude-favorited: ${BITFORUM_RECOMMEND_EXCLUDE_FAVORITED:true}
+      # 生成推荐理由的模型（LLM 只写解释，不参与选文）
+      model-name: ${BITFORUM_RECOMMEND_MODEL:deepseek-flash}
+      # 推荐理由开关。关闭时推荐走"确定性排序 + 无理由"的降级路径。
+      # **离线评测必须置 false**：评测关心的是排序结果，理由会白烧额度并拖慢流程。
+      reason-enabled: ${BITFORUM_RECOMMEND_REASON_ENABLED:true}
+      # 单次最多为几条推荐生成理由；超出的条目前端按"无理由"处理
+      reason-max-articles: ${BITFORUM_RECOMMEND_REASON_MAX_ARTICLES:10}
+    analyst:
+      # ===== M17：运营分析 Agent =====
+      # 记录产生洞察的模型标识，便于换模型后识别历史数据
+      model-name: ${BITFORUM_ANALYST_MODEL:deepseek-flash}
 
 management:
   endpoints:
