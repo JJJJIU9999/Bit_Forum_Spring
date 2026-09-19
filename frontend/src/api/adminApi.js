@@ -151,3 +151,18 @@ export function getInsightStatus() {
 export function getInsightHistory(limit = 10) {
   return request.get('/admin/ai/insight/history', { params: { limit } })
 }
+
+// M18：AI 执行轨迹。一次 AI 调用一条记录，含路由、工具调用链、每步耗时与 token。
+// 列表接口刻意不返回步骤明细（轨迹表会随使用量增长），详情接口才返回 steps。
+export function pageAiTraces(params = { pageNum: 1, pageSize: 10 }) {
+  return request.get('/admin/ai/traces', { params })
+}
+
+export function getAiTraceDetail(traceId) {
+  return request.get(`/admin/ai/traces/${traceId}`)
+}
+
+// M18：AI 用量概览（按天 / 按 Agent / Top 用户 + 成本估算）。
+export function getAiUsageOverview(days = 7) {
+  return request.get('/admin/ai/usage/overview', { params: { days } })
+}

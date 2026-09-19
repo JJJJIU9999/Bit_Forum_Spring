@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BarChart3, BookOpenText, ClipboardCheck, Database, FileText, Flag, FolderCog, Menu, MessageSquare, ShieldCheck, Users, X } from 'lucide-react'
+import { Activity, BarChart3, BookOpenText, ClipboardCheck, Database, FileText, Flag, FolderCog, Menu, MessageSquare, ShieldCheck, Users, X } from 'lucide-react'
 import { Link, NavLink } from 'react-router'
 
 const NAV_GROUPS = [
@@ -28,6 +28,8 @@ const NAV_GROUPS = [
     items: [
       { to: '/admin/kb', label: '知识库', icon: Database },
       { to: '/admin/moderation', label: 'AI 审核', icon: ShieldCheck },
+      // M18：执行轨迹与用量（可观测性的入口）
+      { to: '/admin/ai-traces', label: '执行轨迹', icon: Activity },
     ],
   },
 ]
