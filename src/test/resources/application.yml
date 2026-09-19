@@ -60,6 +60,12 @@ spring:
         cache:
           enabled: true
           directory: ${user.home}/.cache/bitforum-onnx
+    vectorstore:
+      redis:
+        # 与主配置一致：测试同样需要建索引才能验证检索链路。
+        initialize-schema: true
+        index-name: ${BITFORUM_KB_INDEX:bitforum-kb}
+        prefix: "bitforum:kb:"
 
 jwt:
   secret: bit-forum-test-secret-minimum-32-bytes

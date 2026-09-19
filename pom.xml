@@ -150,8 +150,13 @@
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-starter-model-transformers</artifactId>
 		</dependency>
-		<!-- Redis Stack 向量库（RediSearch）在检索实现阶段再引入。
-		     先不加，避免 RedisVectorStore 的自动配置在本轮"只验证嵌入模型"时也进入启动链路。 -->
+		<!-- Redis Stack 向量库（RediSearch）：文档向量存 Redis，MySQL 只存映射与原文（见 V14）。
+		     索引名、前缀、initialize-schema 与元数据字段类型在 application.yml 的
+		     spring.ai.vectorstore.redis.* 配置；只有显式开启 initialize-schema 才会创建索引。 -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-vector-store-redis</artifactId>
+		</dependency>
 	</dependencies>
 
 	<build>

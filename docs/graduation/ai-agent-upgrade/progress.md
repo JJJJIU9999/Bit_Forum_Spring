@@ -12,16 +12,17 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M15 进行中**：ONNX 嵌入模型最小验证（T3）已完成，主体尚未开始 |
-| 最新 Flyway 迁移 | `V13__add_ai_conversation.sql`（M15 主体将新增 V14） |
-| 模块完成度 | M13、M14 已完成；M15 前置验证完成、主体未开始；M16-M18 未开始 |
-| 当前主线 | M15 RAG 知识库与向量检索（下一步：Flyway V14 + 分块/索引/检索服务） |
+| 当前阶段 | **M15 进行中**：嵌入模型验证（T3）与向量库接入（V14）已完成，分块/索引/检索未开始 |
+| 最新 Flyway 迁移 | `V14__add_ai_kb_document.sql`（`ai_kb_document`、`ai_kb_chunk`） |
+| 模块完成度 | M13、M14 已完成；M15 前置与基础设施完成、业务实现未开始；M16-M18 未开始 |
+| 当前主线 | M15 RAG 知识库与向量检索（下一步：分块与索引入库） |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
-| 数据库状态 | MySQL 8.0.46，Flyway V1-V13 全部 success |
-| 测试状态 | **248 项：247 通过 + 1 项条件跳过**（选型探针另有 1 项默认跳过，不计入） |
+| 数据库状态 | MySQL 8.0.46，Flyway V1-V14 全部 success |
+| 测试状态 | **250 项：249 通过 + 1 项条件跳过**（选型探针另有 1 项默认跳过，不计入） |
 | 嵌入模型 | 已定稿 `bge-base-zh-v1.5`（768 维，量化 102MB，缓存于 `~/.cache/bitforum-onnx`） |
+| 向量索引 | `bitforum-kb`（HNSW / FLOAT32 / DIM 768 / COSINE），元数据字段已声明 |
 | 真实调用验证 | 已通过：AI 能调用搜索工具返回真实站内文章；能执行点赞写操作 |
-| 待办 | M15 主体：Flyway V14、`ArticleChunkingService`/`KbIndexService`/`RagService`、异步索引、管理端统计 |
+| 待办 | M15 第二步：`ArticleChunkingService`、`KbIndexService`（含 RabbitMQ 异步索引） |
 
 ## 总体进度
 
@@ -681,9 +682,62 @@ handoff 第三节指出：DeepSeek 不提供 embedding 接口，RAG 的 `Embeddi
 - Redis 向量索引 `DIM` 必须写 **768**，写错会导致 `FT.CREATE` 失败。
 - 模型文件缓存在 `~/.cache/bitforum-onnx`，不进入仓库；新机器首次运行需要联网下载 102MB。
 
-### 下一步：M15 主体（待用户确认后开始）
+### M15-2：Flyway V14 与 Redis 向量库接入
 
-- Flyway V14：`ai_kb_document`、`ai_kb_chunk`
-- `ArticleChunkingService` / `KbIndexService` / `RagService`
+- **Status:** complete
+
+#### 产出
+
+| 类型 | 文件 | 说明 |
+| --- | --- | --- |
+| 迁移 | `src/main/resources/db/migration/V14__add_ai_kb_document.sql` | 新增 `ai_kb_document`、`ai_kb_chunk`（未改 V1-V13） |
+| 配置类 | `src/main/java/com/bitforum/ai/config/VectorStoreConfig.java` | 自定义 `JedisPooled` 与 `RedisVectorStore` bean |
+| 配置 | `application.yml`（主 + 测试两处） | `spring.ai.vectorstore.redis.*`（索引名、前缀、initialize-schema） |
+| 测试 | `src/test/java/com/bitforum/ai/rag/RedisVectorStoreSmokeTest.java` | 2 项：索引维度断言、元数据过滤检索 |
+
+#### 表设计要点
+
+`ai_kb_document` 一篇文章一行，`article_id` 加唯一约束（全量重建时按此 upsert，防重复索引）。
+其中三个字段是计划书没写、实施中补上的，理由如下：
+
+| 字段 | 为什么加 |
+| --- | --- |
+| `content_hash` | 文章每次保存都重新算向量很浪费（一次嵌入要几百毫秒）；指纹未变就直接跳过 |
+| `index_status` | 管理端要能回答"还有多少篇没进知识库 / 失败"；也是失败重试的基础 |
+| `embedding_model` | 本轮就换了 3 个模型；记下来才能在换模型时自动识别"这些向量是旧模型算的、需要重建" |
+
+`ai_kb_chunk` 一段一行，`(document_id, chunk_index)` 唯一；`vector_id` 保存该分块在 Redis 中的向量 id，
+删除与重建时用于精确定位。与既有表一致，只加索引不建物理外键。
+
+#### 关键发现：starter 的自动配置在本项目里用不了
+
+详细证据见 findings.md 6.9.1，两点原因：
+
+1. 自动配置的 `vectorStore` 方法要求容器里有 `JedisConnectionFactory`，
+   而本项目用的是 `spring-boot-starter-data-redis` 默认的 **Lettuce**，Spring Boot 不会再建 Jedis 连接工厂；
+2. 自动配置**不支持声明元数据字段类型**，而 RediSearch 要求过滤用到的字段必须建索引时声明。
+
+因此改为自己声明 bean（连接参数仍复用 `spring.data.redis.*`，不引入第二套配置）；
+自动配置的 bean 带 `@ConditionalOnMissingBean`，会自觉让路。
+
+#### 验证记录
+
+| 验证项 | 结果 |
+| --- | --- |
+| Flyway V14 | `Successfully applied 1 migration ... now at version v14`；`ai_kb_document` / `ai_kb_chunk` 已在 information_schema 中确认存在 |
+| 索引维度 | `FT.INFO bitforum-kb` → `dim, 768`、`algorithm, HNSW`、`data_type, FLOAT32`、`distance_metric, COSINE` |
+| 元数据字段 | `articleId` / `categoryId` / `status` = TAG；`publishTime` / `chunkIndex` = NUMERIC |
+| **T5 过滤检索** | 写入 3 条（2 条 PUBLISHED + 1 条 OFFLINE），过滤检索只返回 2 条 PUBLISHED，**下架内容未被召回** |
+| `mvn test`（全量，清空报告后重跑） | **Tests run: 250, Failures: 0, Errors: 0, Skipped: 1**；31.3 秒 |
+| `npm run build` | 通过，1889 模块 |
+
+#### 踩坑
+
+jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**而不是 `Map`，
+首版按 Map 解析导致一处断言失败，已改为按相邻两元素配对解析。
+
+### 下一步：M15 主体第二步（待用户确认）
+
+- `ArticleChunkingService`：按段落切块（附标题上下文），产出带元数据的片段
+- `KbIndexService`：全量重建 + 增量更新，写入向量库与两张表（用 `content_hash` 跳过未变化的文章）
 - 异步索引走 RabbitMQ（复用既有 DLQ + 手动 ACK + Redis 幂等套路）
-- 管理员知识库统计接口与管理页

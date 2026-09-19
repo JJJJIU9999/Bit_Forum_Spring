@@ -76,6 +76,16 @@ spring:
           # 首次下载之后即可完全离线运行。
           enabled: true
           directory: ${user.home}/.cache/bitforum-onnx
+    vectorstore:
+      redis:
+        # ===== M15：RediSearch 向量库 =====
+        # 只有显式开启 initialize-schema 才会创建索引 —— 这是 Spring AI 1.x 的破坏性变更，
+        # 早期版本默认创建（见 findings.md 3.2 的原文）。
+        # 索引维度由嵌入模型自动决定（bge-base-zh-v1.5 → 768）；
+        # RediSearch 的索引一旦创建，DIM 不可变更，换模型必须先删除旧索引。
+        initialize-schema: true
+        index-name: ${BITFORUM_KB_INDEX:bitforum-kb}
+        prefix: "bitforum:kb:"
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:604800000}

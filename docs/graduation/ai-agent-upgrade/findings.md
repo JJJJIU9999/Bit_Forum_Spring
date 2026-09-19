@@ -750,7 +750,7 @@ SPRING_DATASOURCE_PASSWORD=... SPRING_RABBITMQ_PASSWORD=... JWT_SECRET=... mvn t
 | T2 | Redis Stack 替换后现有 `RedisService` 全部功能正常 | M13 换镜像后跑 M11 相关测试回归 | **已验证通过**（`mvn test` 189 项全绿，含 M11） |
 | T3 | ONNX 嵌入模型能成功加载并返回向量 | M15 开始前的最小验证 | **已验证通过**（见 6.8）：bge-base-zh-v1.5 量化版，维度 768，缓存后离线可跑 |
 | T4 | DeepSeek Tool Calling 实际可用且有稳定的调用成功率 | M14 工具冒烟测试 | 待验证 |
-| T5 | `RedisVectorStore` 元数据过滤在实际数据上生效 | M15 检索验证 | **原生命令已验证**（见 5.4），Spring AI 封装层待验证 |
+| T5 | `RedisVectorStore` 元数据过滤在实际数据上生效 | M15 检索验证 | **已验证通过**（见 6.9）：封装层过滤生效，OFFLINE 内容未被召回 |
 | T6 | 单轮对话的真实 Token 消耗与费用 | M13 结束后首次统计 | 待验证 |
 | T7 | 结构化输出在 DeepSeek 上的稳定性 | M16 审核 Agent 验证 | 待验证 |
 | T8 | 异步索引队列与既有 `ArticlePublishMessage` 队列不冲突 | M15 接入 RabbitMQ 时验证 | 待验证 |
@@ -1089,6 +1089,78 @@ o.s.a.t.TransformersEmbeddingModel       : Model output names: last_hidden_state
 3. 更换模型只改 `src/main/resources/application.yml` 与 `src/test/resources/application.yml` 两处的
    `model-uri` / `tokenizer.uri`，但**必须同步修改 Redis 索引 DIM**，
    并重跑 `OnnxEmbeddingSmokeTest`（维度与区分度下限）与 `EmbeddingModelComparisonProbe`（排序质量）。
+
+### 6.9 M15 向量库接入实测：自动配置在本项目不可用，必须自己声明 bean（2026-09-19）
+
+**结论**：Redis Stack 向量库已接通，索引维度 768、HNSW + COSINE、元数据字段按 TAG/NUMERIC 正确声明；
+**T5（元数据过滤在 Spring AI 封装层生效）验证通过**。
+
+#### 6.9.1 关键发现：starter 的自动配置有两个硬限制
+
+反编译 `spring-ai-starter-vector-store-redis:1.1.8` 的 `RedisVectorStoreAutoConfiguration`：
+
+**限制一：它要求容器里存在 `JedisConnectionFactory`。**
+
+```text
+public RedisVectorStore vectorStore(EmbeddingModel, RedisVectorStoreProperties,
+        org.springframework.data.redis.connection.jedis.JedisConnectionFactory,
+        ObjectProvider<ObservationRegistry>, ObjectProvider<VectorStoreObservationConvention>,
+        BatchingStrategy)
+```
+
+本项目用的是 `spring-boot-starter-data-redis` 默认的 **Lettuce**，
+Spring Boot 不会同时创建 Jedis 连接工厂（`RedisConnectionFactory` 已存在），因此自动配置拿不到依赖。
+
+**限制二：它不支持声明元数据字段类型。**
+
+builder 调用链里只有 `initializeSchema` / `observationRegistry` / `batchingStrategy` / `indexName` / `prefix`，
+**没有 `metadataFields`**；配置元数据里也只有 3 个属性：
+
+```text
+spring.ai.vectorstore.redis.index-name          | default = 'default-index'
+spring.ai.vectorstore.redis.initialize-schema   | default = None
+spring.ai.vectorstore.redis.prefix              | default = 'default:'
+```
+
+而 RediSearch 要求所有出现在过滤表达式里的元数据字段必须在建索引时显式声明类型（见 3.2）。
+
+**应对**：在 `com.bitforum.ai.config.VectorStoreConfig` 中自己声明 `JedisPooled` 与 `RedisVectorStore` bean，
+元数据字段显式声明；连接参数复用 Spring Boot 的 `spring.data.redis.*`，不引入第二套连接配置。
+自动配置的 bean 带 `@ConditionalOnMissingBean`，会自觉让路，不会产生重复 bean。
+
+#### 6.9.2 实测索引定义（`FT.INFO bitforum-kb`）
+
+```text
+[identifier, $.content,     attribute, content,     type, TEXT,  WEIGHT, 1]
+[identifier, $.embedding,   attribute, embedding,   type, VECTOR, algorithm, HNSW,
+ data_type, FLOAT32, dim, 768, distance_metric, COSINE, M, 16, ef_construction, 200]
+[identifier, $.articleId,   attribute, articleId,   type, TAG, SEPARATOR, ]
+[identifier, $.categoryId,  attribute, categoryId,  type, TAG, SEPARATOR, ]
+[identifier, $.status,      attribute, status,      type, TAG, SEPARATOR, ]
+[identifier, $.publishTime, attribute, publishTime, type, NUMERIC]
+[identifier, $.chunkIndex,  attribute, chunkIndex,  type, NUMERIC]
+```
+
+维度 768 与嵌入模型一致；`status` 声明为 TAG 后可直接用于 `status == 'PUBLISHED'` 过滤。
+
+#### 6.9.3 T5 验证：元数据过滤在封装层生效
+
+`RedisVectorStoreSmokeTest` 写入 3 条向量（2 条 PUBLISHED、1 条 OFFLINE），
+用 `SearchRequest.builder().filterExpression("status == 'PUBLISHED'")` 检索：
+
+```text
+>>> 过滤检索返回 2 条，命中文章 = [9001, 9002]     ← OFFLINE 的 9003 未被召回
+```
+
+#### 6.9.4 小坑记录
+
+jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**
+（`[identifier, $.embedding, attribute, embedding, ..., dim, 768, ...]`）而**不是 `Map`**，
+解析时必须按相邻两元素配对；首版按 Map 解析导致断言失败。
+
+#### 6.9.5 新增数据库对象
+
+V14 已应用（`flyway_schema_history` version=14、success=1）：`ai_kb_document`、`ai_kb_chunk`。
 
 ---
 
