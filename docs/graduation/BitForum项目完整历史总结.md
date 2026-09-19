@@ -16,7 +16,7 @@
 - **M13-M18 六个 AI 模块已全部完成**，在 `feat/ai-agent` 分支上按模块本地提交，**领先 `origin/feat/ai-agent` 15 个提交，尚未 push**（按策略在系统冻结检查点统一推送，最后一次性合并回 `main`）。
 - 当前 HEAD：`d8bc308 docs(graduation): sync top-level overview and progress with M13-M18 completion (M18)`。
 - 工作区干净；Flyway 已到 **V19**；向量索引 `bitforum-kb` 已重建（114 个片段）。
-- 最近验证（2026-09-19）：**后端 `mvn test` 394 项（385 通过 + 9 条件跳过），前端 `npm test` 36 项**，`npm run build` 通过；
+- 最近验证（2026-09-19）：**后端 `mvn test` 407 项（398 通过 + 9 条件跳过），前端 `npm test` 36 项**，`npm run build` 通过；
   真实环境端到端验证：一次提问产生 5 步执行轨迹（含工具调用）、用量 7085 tokens 且成本可估算。
 - 技术栈新增：**Spring AI 1.1.8 + DeepSeek + 本地 ONNX 嵌入（bge-base-zh-v1.5）+ Redis Stack（RediSearch 向量检索）**。
 - 因此本文后面几处已过期的表述（第 2 节 Git 状态、第 3 节技术栈、第 7 节 Flyway 版本、第 10 节测试规模、
@@ -489,7 +489,7 @@ docker compose up --build -d app
 
 | 验证 | 结果 |
 | --- | --- |
-| 后端 `mvn test` | **394 项：385 通过 + 9 条件跳过，0 failure / 0 error**（跳过项均为需要真实 API Key 的调用测试） |
+| 后端 `mvn test` | **407 项：398 通过 + 9 条件跳过，0 failure / 0 error**（跳过项均为需要真实 API Key 的调用测试） |
 | 前端 `npm test` | **36 项全部通过**（7 个测试文件） |
 | 前端 `npm run build` | 通过（Vite 7，产物 css/js 均正常生成） |
 | Flyway | schema 当前版本 **19**，无需迁移 |
@@ -580,7 +580,8 @@ docker compose up --build -d app
    局限与诚实声明见 `ai-agent-upgrade/m17-eval-report.md`。
 2. **向量召回的区分度偏弱**：同主题与跨主题文章的平均相似度只差 0.0147（目标 0.05），
    已在 M17 决策为“接受为已知局限”，不通过改语料/换模型/调算法去凑指标。
-3. **`TokenBudgetGuard` 未实现**：当前只有用量统计与成本估算，没有单轮输入上限与单用户日配额。
+3. ~~`TokenBudgetGuard` 未实现~~ → **已实现（克制版，2026-09-19）**：单用户每日 token/费用上限、
+   超限统一降级、单次输入输出保护；套餐/充值/余额、会员等级、分布式配额中心、动态配置后台**明确不做**。
 4. **执行轨迹与用量明细没有归档/清理策略**：数据随 AI 调用量增长，长期需要保留策略。
 5. **没有做 AI 相关压测**：轨迹与用量是新增的写库路径，尚未评估其对延迟的影响。
 6. **知识库与审核链路依赖 Redis Stack 与 RabbitMQ**：中间件异常时 AI 能力降级（主流程不受影响），
@@ -613,7 +614,7 @@ docker compose up --build -d app
 
 - 已实现完整文章审核状态机、通知中心、举报治理、关注关系、文件上传、OpenAPI、Redis 指标同步、Actuator 和 React 管理/用户端。
 - 已实现 RabbitMQ Confirm/Returns、手动 ACK、DLQ 和 Redis 幂等基础机制。
-- 已有 **394 个后端测试方法（385 通过 + 9 条件跳过）与 36 个前端测试**，最近一次完整运行全部通过。
+- 已有 **407 个后端测试方法（398 通过 + 9 条件跳过）与 36 个前端测试**，最近一次完整运行全部通过。
 - React 已完成整体路由与响应式视觉重构，并能通过 Docker/Nginx 部署。
 - **已接入 Spring AI 1.1.8 + DeepSeek，落地四个协作 Agent（问答 / 审核 / 运营分析 / 推荐），
   具备 12 个 `@Tool` 工具调用、RAG 向量知识库与引用回答、人机协同审核、可解释推荐，
@@ -626,7 +627,7 @@ docker compose up --build -d app
 - 系统已上线、有真实并发、真实用户量或生产性能数据。
 - 已使用 Elasticsearch、WebSocket、微服务、Kubernetes、对象存储或完整 CI/CD。
 - 前端已经有完整 E2E 测试或生产级认证安全。
-- AI 能力已具备生产级的额度管控（`TokenBudgetGuard` 未做）、或推荐指标代表真实社区流量效果。
+- AI 能力已具备生产级的多租户配额体系（当前只有单用户每日上限的克制版预算）、或推荐指标代表真实社区流量效果。
 - 已使用 TailwindCSS、Redux 等前端库（前端仍是原生 CSS + React Context，无状态管理库、无图表库）。
 
 ## 15. 项目真实性摘要
@@ -666,7 +667,7 @@ docker compose up --build -d app
 | M15 | V14 知识库表、ONNX 本地嵌入（bge-base-zh-v1.5 / 768 维）、Redis Stack 向量检索、引用回答、MQ 异步索引与全量重建 | 真实回答带引用；端到端索引链路；findings 6.8-6.10 |
 | M16 | V15 审核记录表、五维固定字段结构化输出、决策/动作解耦、人工反馈闭环、管理台审核台 | 评测 70 + 30 条：漏放率 0%、误伤率 0%、安全召回率 100% |
 | M17 | V16/V17、AnalystAgent 异步洞察、三路召回（向量/热度/关注）+ RRF 融合 + 推荐理由、三处前端落地、离线评测 | 洞察真实调用 5.0s / 2695 tokens；推荐 `HitRate@10` 0.8889 vs 热榜 0.2222 |
-| M18 | V18 执行轨迹 + V19 用量统计、四条链路埋点、`AiDegradeGuard` 统一降级、管理端轨迹页与用量概览 | 394 / 36 项测试；真实环境 5 步轨迹含工具调用 |
+| M18 | V18 执行轨迹 + V19 用量统计、四条链路埋点、`AiDegradeGuard` 统一降级、管理端轨迹页与用量概览、克制版用量预算闸门 | 407 / 36 项测试；真实环境 5 步轨迹含工具调用 |
 
 ### 16.3 新增接口与前端入口
 
@@ -740,11 +741,11 @@ docker compose up --build -d app
 
 | 项 | 状态 |
 | --- | --- |
-| 全量回归 | 已完成（394 / 36 项）；注意全量测试会清空向量索引，需重建 |
+| 全量回归 | 已完成（407 / 36 项）；注意全量测试会清空向量索引，需重建 |
 | 压测 / 性能观察 | **未做**（M18 新增轨迹与用量两条写库路径） |
 | 演示脚本与答辩材料 | 骨架已有（`ai-agent-upgrade/task_plan.md` 第十三节，第四幕即「执行轨迹页」逐帧演示） |
 | push 检查点 / 合并回 `main` | **未做**，均需项目作者单独确认 |
-| `TokenBudgetGuard`（单轮输入上限 / 单用户日配额） | **未做**（M18 明确标为“时间充足才做”） |
+| ~~`TokenBudgetGuard`~~ | **已完成（克制版）**，见 `ai-agent-upgrade/progress.md` M18-5 |
 | 轨迹与用量表的归档清理 | 未做（长期需要） |
 | `scripts/agent-tool-smoke.md`（M14 工具调用会话整理） | 未做（记录类小事） |
 

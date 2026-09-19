@@ -307,7 +307,8 @@ com.bitforum.ai
 4. **评测数据答辩时保留**，但展示成明确的**"演示数据"**而不是伪装成正常帖子；
    保留 `M17EvalDataSeeder` 与一键清理能力。
 5. **M18 范围收敛**：聚焦 **Trace + Usage + Degrade + 简单可视化**；
-   Prompt 动态管理、LLM-as-Judge、完整 AI Settings **直接砍掉**；`TokenBudgetGuard` 时间充足再做。
+   Prompt 动态管理、LLM-as-Judge、完整 AI Settings **直接砍掉**；`TokenBudgetGuard` 时间充足再做
+   （M18 收尾时已按克制版补齐，见 `progress.md` M18-5）。
 
 > **执行纪律**：M17 的推荐数字已完成它的实验使命。
 > **下一步最不该做的就是继续优化 0.8889** —— 价值最高的是把 AI 系统
@@ -335,7 +336,7 @@ com.bitforum.ai
 
 **时间充足才做**：
 
-- ⏳ `TokenBudgetGuard`（单轮输入上限、单用户日配额、超限友好提示）
+- [x] `TokenBudgetGuard`（克制版，M18 收尾已实现）：单轮输入上限、单用户日配额、超限友好提示
 
 **验收（相应调整）**：
 
@@ -619,13 +620,15 @@ git diff --check
 - [x] 新增 Flyway **V19** `ai_usage_stat`（统一用量埋点 + 成本估算；不含 `ai_prompt_template`）
 - [x] `AiDegradeGuard`：统一降级（改造四个既有 Agent，原因码 + 统一文案 + 记录入口收敛）
 - [x] 前端「AI 执行轨迹」页 + 用量概览（`/admin/ai-traces`；简单优先，不引图表库）
-- [ ] （时间充足再做）`TokenBudgetGuard` —— **本轮未做**，属于可选增强
+- [x] `TokenBudgetGuard`（**克制版**）：单用户每日 token/费用上限 + 超限统一降级 + 单次输入输出保护
+      （不做套餐/充值/余额、会员等级、分布式配额中心、动态配置后台）
 - [x] ~~LLM-as-Judge 评估脚本~~ / ~~Prompt 动态管理~~ / ~~AI 设置页~~（**本轮砍掉**）
 
 > **M18 完成记录（2026-09-19）**：前置验证 T12/T13 通过 → V18 轨迹（四条链路埋点 + 管理端查询）
-> → V19 用量 → 统一降级 → 前端轨迹页；后端 394 项 / 前端 36 项全绿；
+> → V19 用量 → 统一降级 → 前端轨迹页 → 克制版 `TokenBudgetGuard`；
+> 后端 **407 项**（398 通过 + 9 条件跳过）/ 前端 36 项全绿；
 > 真实环境实测一次对话产生 5 步轨迹（含工具调用）与 1 条用量明细。
-> 细节见 `progress.md` 的 M18-0 ~ M18-4、`findings.md` 6.18 / 6.19。
+> 细节见 `progress.md` 的 M18-0 ~ M18-5、`findings.md` 6.18 / 6.19。
 
 ### Phase 7：集成与答辩
 
