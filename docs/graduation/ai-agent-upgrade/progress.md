@@ -2173,3 +2173,58 @@ M18 决策 Q1 要解决的具体缺口（查现库实测）：
 
 聚合 SQL 用**真实 MySQL** 验证（`AdminAiUsageControllerTest` 走真实库）：
 按天、按 Agent、Top 用户三个聚合的列别名与 DTO 映射正确 —— 这类错误纯 mock 测试看不出来。
+
+---
+
+### M18-3：`AiDegradeGuard` 统一降级（改造四个 Agent）（2026-09-19）
+
+- **Status:** complete
+
+#### 一、问题：四个 Agent 各写各的降级
+
+M13-M17 期间每个 Agent 都实现了降级，但**四处不一致**：
+
+| Agent | 原来的降级文案 | 原来的原因表达 |
+| --- | --- | --- |
+| QaAgent | "AI 助手当前未启用（未配置 DEEPSEEK_API_KEY），请联系管理员。" | 只有一句自由文本 |
+| ModerationAgent | "ChatClient 不可用（未配置 DEEPSEEK_API_KEY 或未启用 AI）" | 写进 `error_message` 列 |
+| AnalystAgent | 同上 | 写进 `error_message` 列 |
+| RecommendReasonAgent | 同上 | 只体现在一个 `degraded` 布尔上 |
+
+同一个故障在四个地方有四种说法，既无法统计，也无法保证"用户看得懂"。
+
+#### 二、做法：三个统一
+
+新增 `ai/degrade/AiDegradeGuard`：
+
+1. **原因码统一**：`classify(Throwable)` 沿异常链归类（超时 → `LLM_TIMEOUT`，其余 → `LLM_ERROR`），
+   "AI 未启用""返回空内容""本地数据不可用"等原因由调用方显式给出（`TraceDegradeReason` 常量）。
+   刻意**只分两档异常**：更细的分类（限流 / 鉴权 / 额度）要靠供应商专用异常类型，
+   用字符串硬匹配只会在供应商改文案时静默失效；原始信息作为 detail 进轨迹，排查时够用。
+2. **文案统一**：`degrade(reason, detail)` 返回 `TraceDegradeReason.userMessage(reason)`，
+   同一原因码在任何 Agent、任何场景下都是同一句话。
+   **内部细节不再直接抛给用户**（"connection reset" 只进轨迹），这是行为上的有意变化。
+3. **记录统一**：降级一律写进当前执行轨迹；各调用方（审核监听器 / 洞察异步任务 / 推荐编排）
+   **删掉了自己那份重复的 `traceRecorder.degrade(...)`** —— 降级记录入口收敛到 Guard 一处。
+
+#### 三、四个 Agent 的改造点
+
+| Agent | 原因码来源 |
+| --- | --- |
+| `QaAgent` | `AI_DISABLED`（模型未启用）/ `EMPTY_RESPONSE`（空回答）/ `RETRIEVE_FAILED`（检索失败）/ `classify`（异常） |
+| `ModerationAgent` | `NOTHING_TO_DO`（内容为空）/ `AI_DISABLED` / `EMPTY_RESPONSE` / `classify` |
+| `AnalystAgent` | **`DATA_UNAVAILABLE`**（统计聚合或快照序列化失败 —— 这是本地数据问题，**不能记成模型失败**）/ `AI_DISABLED` / `EMPTY_RESPONSE` / `classify` |
+| `RecommendReasonAgent` | `NOTHING_TO_DO`（列表为空）/ `AI_DISABLED` / `EMPTY_RESPONSE` / `classify` |
+
+`ModerationOutcome` / `InsightOutcome` / `ReasonOutcome` 各增加 `degradeReason` 字段，
+与新增的 `DATA_UNAVAILABLE` 一起，使"降级到底因为什么"在轨迹与用量里都可查。
+
+#### 四、验证
+
+| 项 | 结果 |
+| --- | --- |
+| 新增测试 | `AiDegradeGuardTest` 6 项：异常链归类、超时识别、统一文案、`call` 的正常/降级两路 |
+| 行为断言 | `AnalystAgentTest` 改为断言"原因码 + 统一文案"，并用 `verify(traceRecorder).degrade(..., contains("数据库连接中断"))` 确认**原始信息进了轨迹而非用户文案** |
+| 相关测试 | 75 项全绿 |
+| 后端全量 | **394 项：385 通过 + 9 条件跳过，0 失败** |
+| 前端 | 33 项通过；`npm run build` 成功 |
