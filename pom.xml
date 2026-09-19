@@ -139,10 +139,19 @@
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-starter-model-deepseek</artifactId>
 		</dependency>
-		<!-- M15 再引入（届时需要向量检索与嵌入模型）：
-		     - spring-ai-starter-model-transformers（本地 ONNX 嵌入模型）
-		     - spring-ai-starter-vector-store-redis（Redis Stack 向量库）
-		     提前引入会让 ONNX 模型在启动阶段就被要求加载，平白增加 M13 的失败面。 -->
+		<!-- ==================== M15：RAG 知识库与向量检索 ==================== -->
+		<!-- 本地 ONNX 嵌入模型：DeepSeek starter 只提供 Chat 模型、不提供 embedding 接口，
+		     所以 RAG 的 EmbeddingModel 必须另找来源（见 findings.md 3.3 与决策 D4）。
+		     实测约束：该 starter 的自动配置只有 @ConditionalOnClass、没有 @ConditionalOnProperty，
+		     因此只要本依赖在类路径上，每个 Spring 上下文启动都会构建 ONNX 会话并加载模型文件。
+		     模型缓存目录与下载源在 application.yml 的 spring.ai.embedding.transformer.* 中显式固定，
+		     首次联网下载一次，之后可完全离线运行。 -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-model-transformers</artifactId>
+		</dependency>
+		<!-- Redis Stack 向量库（RediSearch）在检索实现阶段再引入。
+		     先不加，避免 RedisVectorStore 的自动配置在本轮"只验证嵌入模型"时也进入启动链路。 -->
 	</dependencies>
 
 	<build>

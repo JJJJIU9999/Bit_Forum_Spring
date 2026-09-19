@@ -12,15 +12,16 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M14 已完成**（工具集 + Tool Calling + 身份注入修正 + 真实调用验证） |
-| 最新 Flyway 迁移 | `V13__add_ai_conversation.sql`（M14 无新增迁移） |
-| 模块完成度 | M13、M14 已完成；M15-M18 未开始 |
-| 当前主线 | M14 收尾；下一步 M15 RAG 知识库与向量检索 |
+| 当前阶段 | **M15 进行中**：ONNX 嵌入模型最小验证（T3）已完成，主体尚未开始 |
+| 最新 Flyway 迁移 | `V13__add_ai_conversation.sql`（M15 主体将新增 V14） |
+| 模块完成度 | M13、M14 已完成；M15 前置验证完成、主体未开始；M16-M18 未开始 |
+| 当前主线 | M15 RAG 知识库与向量检索（下一步：Flyway V14 + 分块/索引/检索服务） |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
 | 数据库状态 | MySQL 8.0.46，Flyway V1-V13 全部 success |
-| 测试状态 | **233 项：232 通过 + 1 项条件跳过** |
+| 测试状态 | **248 项：247 通过 + 1 项条件跳过**（选型探针另有 1 项默认跳过，不计入） |
+| 嵌入模型 | 已定稿 `bge-base-zh-v1.5`（768 维，量化 102MB，缓存于 `~/.cache/bitforum-onnx`） |
 | 真实调用验证 | 已通过：AI 能调用搜索工具返回真实站内文章；能执行点赞写操作 |
-| 待办 | M15：引入 transformers 与 vector-store-redis、Flyway V14、RAG 检索 |
+| 待办 | M15 主体：Flyway V14、`ArticleChunkingService`/`KbIndexService`/`RagService`、异步索引、管理端统计 |
 
 ## 总体进度
 
@@ -30,7 +31,7 @@
 | Prep | 前置环境（Redis Stack 替换 + Key 配置 + 中间件启动） | 已完成 | 三容器 healthy；RediSearch 2.10.20 已加载；向量检索端到端验证通过 | `findings.md` 第五节 |
 | M13 | AI 基础设施与对话骨架 | **已完成** | 211 项测试（210 通过 + 1 跳过）；真实 DeepSeek 调用验证通过 | 本文 |
 | M14 | 工具集与 Tool Calling | **已完成** | 233 项测试（232 通过 + 1 跳过）；真实调用验证工具可用 | 本文 |
-| M15 | RAG 知识库与向量检索 | 未开始 | — | 待创建 |
+| M15 | RAG 知识库与向量检索 | **进行中** | ONNX 嵌入模型验证通过（T3）；模型定稿 bge-base-zh-v1.5（768 维） | 本文 |
 | M16 | 内容审核 Agent | 未开始 | — | 待创建 |
 | M17 | 运营分析 Agent 与智能推荐 | 未开始 | — | 待创建 |
 | M18 | 可观测性、评估与工程化闭环 | 未开始 | — | 待创建 |
@@ -604,3 +605,85 @@ chatClient.prompt().messages(messages).tools(tools).toolContext(toolContext).cal
 - 实现 `ArticleChunkingService` / `KbIndexService` / `RagService`
 - 异步索引走 RabbitMQ，复用既有 DLQ + 手动 ACK + Redis 幂等套路
 - 扩展名搜索能力：当前 searchArticles 是关键词匹配，M15 补语义检索
+
+---
+
+## M15 执行记录（2026-09-19）
+
+### M15-1：ONNX 嵌入模型最小验证（findings.md 待验证事项 T3）
+
+- **Status:** complete
+
+#### 为什么先做这一步
+
+handoff 第三节指出：DeepSeek 不提供 embedding 接口，RAG 的 `EmbeddingModel` 必须另找来源；
+本地 ONNX 是三条回退路径中的首选，但它是**整个计划里唯一没实测过的技术点**。
+按 M13 的教训（`@ConditionalOnBean`、占位 Key 都是真实调用时才暴露问题），
+本轮**只加依赖、不写业务代码**，先把"模型能加载 + 能产出向量"跑通，验证通过再进主体。
+
+#### 实测发现（完整证据见 findings.md 6.8）
+
+1. `TransformersEmbeddingModelAutoConfiguration` 只有 `@ConditionalOnClass`、**没有 `@ConditionalOnProperty`**
+   —— 只要依赖在类路径上，每个 Spring 上下文启动都会构建 ONNX 会话并加载模型文件，无法用配置开关关闭。
+2. 默认模型地址指向 **GitHub 的 main 分支**（不是 HuggingFace），默认缓存目录在**系统临时目录**；
+   两者都已在本项目配置中显式固定（写死 URI + `~/.cache/bitforum-onnx`）。
+3. `TransformersEmbeddingModel` 内部 pooling **硬编码为 mean、不可配置**，而不同模型的训练约定不同
+   （BGE 用 CLS、MiniLM/e5 用 mean）→ **选型不能看模型名气，必须实测**。
+
+#### 三模型检索质量实测
+
+用 `EmbeddingModelComparisonProbe` 在 5 条中文「查询 → 相关文档 + 干扰文档」样本上评测，
+指标是"相关文档能否排第一"以及"相关分 − 最高干扰分"的平均差距（差距越大排序越稳）：
+
+| 模型 | 维度 | 体积 | Top-1 命中 | 平均区分度差距 |
+| --- | --- | --- | --- | --- |
+| all-MiniLM-L6-v2（Spring AI 默认，英文） | 384 | 90MB | 2/5 | −0.0507 |
+| **bge-base-zh-v1.5（定稿）** | **768** | 102MB | **5/5** | **+0.1914** |
+| multilingual-e5-small | 384 | 118MB | 5/5 | +0.0493 |
+
+**定稿 `Xenova/bge-base-zh-v1.5` 的通用动态量化版（102MB，768 维）**：中文排序质量最优，
+平均区分度约为 e5 的 4 倍（e5 虽然 Top-1 也对，但分数全挤在 0.85~0.94，实际检索中容易被噪声反超）；
+且通用动态量化不绑定 CPU 架构，双机（Windows / MacBook）开发无需重新导出。
+
+#### 启动耗时实测
+
+| 场景 | 实测 |
+| --- | --- |
+| 首次（含下载 tokenizer + model.onnx） | Spring 上下文启动 **52.16 秒** |
+| 缓存命中后（日志无 `Caching the URL`） | Spring 上下文启动 **2.24 秒** |
+
+#### 验证记录
+
+| 命令 | 结果 |
+| --- | --- |
+| `-Dtest=OnnxEmbeddingSmokeTest` | 2 项通过；维度 768 稳定、元素有限、中文相关 > 不相关 |
+| `-Dtest=EmbeddingModelComparisonProbe`（需 `EMBEDDING_PROBE=true`） | 5/5 命中；不带环境变量时正确跳过（Skipped: 1） |
+| `mvn test`（全量，清空 surefire-reports 后重跑） | **Tests run: 248, Failures: 0, Errors: 0, Skipped: 1**；耗时 28.7 秒 |
+| `npm run build` | 通过，1889 模块（与 M14 基线一致） |
+
+测试数说明：handoff 记录的 233 项是 `6ce4956` 时的数字；其后 `42a6b9c`（作者可打开自己的未发布文章）
+新增 `ArticleDetailVisibilityTest`，基线变为 246 项；本轮新增 `OnnxEmbeddingSmokeTest` 2 项 → 248 项。
+
+#### 本模块修改/新增文件
+
+| 文件 | 变更 |
+| --- | --- |
+| `pom.xml` | 新增 `spring-ai-starter-model-transformers`（`vector-store-redis` 留到检索阶段再引入） |
+| `src/main/resources/application.yml` | 新增 `spring.ai.embedding.transformer.*`：显式模型 URI + 持久缓存目录 |
+| `src/test/resources/application.yml` | 同上（测试类路径下同名文件整体覆盖主配置，必须重复写） |
+| `src/test/java/com/bitforum/ai/embedding/OnnxEmbeddingSmokeTest.java` | 新增，2 项，断言做成模型无关 |
+| `src/test/java/com/bitforum/ai/embedding/EmbeddingModelComparisonProbe.java` | 新增，选型评测探针，默认不参与回归 |
+
+#### 遗留优化点（进入主体实现时要处理）
+
+- BGE 官方建议给 **query 一侧**加检索指令前缀「为这个句子生成表示以用于检索相关文章：」
+  （passage 一侧不加），应在 `RagService` 中应用，并用真实站内文章复测。
+- Redis 向量索引 `DIM` 必须写 **768**，写错会导致 `FT.CREATE` 失败。
+- 模型文件缓存在 `~/.cache/bitforum-onnx`，不进入仓库；新机器首次运行需要联网下载 102MB。
+
+### 下一步：M15 主体（待用户确认后开始）
+
+- Flyway V14：`ai_kb_document`、`ai_kb_chunk`
+- `ArticleChunkingService` / `KbIndexService` / `RagService`
+- 异步索引走 RabbitMQ（复用既有 DLQ + 手动 ACK + Redis 幂等套路）
+- 管理员知识库统计接口与管理页

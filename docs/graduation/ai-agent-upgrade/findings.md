@@ -748,7 +748,7 @@ SPRING_DATASOURCE_PASSWORD=... SPRING_RABBITMQ_PASSWORD=... JWT_SECRET=... mvn t
 | --- | --- | --- | --- |
 | T1 | Spring AI 1.1.8 在 Spring Boot 3.4.5 下真实启动无冲突 | M13 引入依赖后立即验证 | **已验证通过**（编译成功 + 189 项测试全绿） |
 | T2 | Redis Stack 替换后现有 `RedisService` 全部功能正常 | M13 换镜像后跑 M11 相关测试回归 | **已验证通过**（`mvn test` 189 项全绿，含 M11） |
-| T3 | ONNX 嵌入模型能成功加载并返回向量 | M15 开始前的最小验证 | 待验证 |
+| T3 | ONNX 嵌入模型能成功加载并返回向量 | M15 开始前的最小验证 | **已验证通过**（见 6.8）：bge-base-zh-v1.5 量化版，维度 768，缓存后离线可跑 |
 | T4 | DeepSeek Tool Calling 实际可用且有稳定的调用成功率 | M14 工具冒烟测试 | 待验证 |
 | T5 | `RedisVectorStore` 元数据过滤在实际数据上生效 | M15 检索验证 | **原生命令已验证**（见 5.4），Spring AI 封装层待验证 |
 | T6 | 单轮对话的真实 Token 消耗与费用 | M13 结束后首次统计 | 待验证 |
@@ -1014,13 +1014,89 @@ chatClient.prompt().messages(messages).tools(tools).toolContext(toolContext).cal
 "按 Agent 装配工具子集"的实际收益 —— 当前 `ToolRegistry` 已按类型隔离，
 正是为控制这一开销所做的设计。
 
+### 6.8 T3 验证执行记录：ONNX 嵌入模型实测（2026-09-19，M15 开工前）
+
+**结论：T3 通过。** 本地 ONNX 嵌入模型能在 arm64 + JDK 17 下加载、产出稳定向量，缓存后可完全离线复跑。
+M15 的最大技术风险解除，两条回退路径（Ollama 本地嵌入 / MySQL 关键词兜底）无需启用。
+
+#### 6.8.1 引入依赖后的实测发现
+
+加入 `spring-ai-starter-model-transformers` 后，反编译 `spring-ai-autoconfigure-model-transformers:1.1.8` 确认：
+
+- `TransformersEmbeddingModelAutoConfiguration` 的自动配置元数据**只有 `ConditionalOnClass`、没有 `ConditionalOnProperty`**
+  （与 6.2 记录的 DeepSeek 是同一个模式）。因此只要依赖在类路径上，**每个 Spring 上下文启动都会构建 ONNX 会话并加载模型文件**，无法用配置开关关闭。
+- 默认模型地址指向 **GitHub 而不是 HuggingFace**，两个地址实测均可直连（HTTP 206，约 1s 响应，无需代理）：
+  - tokenizer：`raw.githubusercontent.com/spring-projects/spring-ai/main/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/tokenizer.json`
+  - model：`media.githubusercontent.com/media/spring-projects/spring-ai/refs/heads/main/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/model.onnx`
+  - 但两者都指向上游 **main 分支**，会随上游提交漂移 → 因此本项目在配置里显式写死 URI，不用默认值。
+- 默认缓存目录是 `${java.io.tmpdir}/spring-ai-model-cache`（系统临时目录，macOS 会定期清理），
+  已改为持久的 `${user.home}/.cache/bitforum-onnx`。
+
+启动日志实证（首次运行）：
+
+```text
+o.s.a.transformers.ResourceCacheService : Create cache root directory: /Users/jiu/.cache/bitforum-onnx
+o.s.a.transformers.ResourceCacheService : Caching the URL [...tokenizer.json] resource to: ...
+o.s.a.transformers.ResourceCacheService : Caching the URL [...model.onnx] resource to: ...
+o.s.a.t.TransformersEmbeddingModel       : Model input names: input_ids, attention_mask, token_type_ids
+o.s.a.t.TransformersEmbeddingModel       : Model output names: last_hidden_state
+```
+
+#### 6.8.2 启动耗时：首次 vs 缓存命中
+
+| 场景 | 实测结果 |
+| --- | --- |
+| 首次（含下载 tokenizer 712KB + model 90.4MB） | Spring 上下文启动 **52.16 秒** |
+| 缓存命中后（日志中不再出现 `Caching the URL`） | Spring 上下文启动 **2.24 秒** |
+
+**结论**：模型加载只在首次需要联网，之后每次上下文启动仅约 2 秒，属于可接受成本。
+
+#### 6.8.3 嵌入模型的 pooling 约束（决定选型必须实测）
+
+`TransformersEmbeddingModel` 内部只有私有方法 `meanPooling(NDArray, NDArray)`，
+**pooling 方式硬编码为 mean、不可配置**。而不同模型的训练约定不同
+（BGE 系列用 CLS pooling，多语言 MiniLM / e5 用 mean pooling），
+所以"模型名气"不能作为选型依据，必须实测。
+
+#### 6.8.4 三模型检索质量对比（同一批中文样本）
+
+评测工具：`EmbeddingModelComparisonProbe`。5 条样本，每条为「中文查询 + 1 段相关文档 + 3 段干扰文档」，
+判断相关文档能否被排到第一位（Top-1），并记录「相关分 − 最高干扰分」的平均差距（差距越大，排序越稳、越抗噪）。
+
+| 模型 | 维度 | 体积 | Top-1 命中 | 平均区分度差距 |
+| --- | --- | --- | --- | --- |
+| all-MiniLM-L6-v2（英文，Spring AI 默认） | 384 | 90MB（fp32） | **2/5** | **−0.0507** |
+| **bge-base-zh-v1.5（Xenova，动态量化）** | **768** | **102MB** | **5/5** | **+0.1914** |
+| multilingual-e5-small（Xenova，动态量化） | 384 | 118MB | 5/5 | +0.0493 |
+
+英文模型的典型失败例子：查询「网站打开很慢怎么办」，相关文档得分 0.3963，
+而无意义干扰项「如何更换主题颜色」得分 0.5900 —— **相关文档反而排在后面**，说明英文模型不能用于中文检索。
+
+**选型结论：采用 `Xenova/bge-base-zh-v1.5` 的 `onnx/model_quantized.onnx`。** 理由：
+
+1. 中文检索质量明显最优，平均区分度约为 e5 的 4 倍（e5 虽然 Top-1 也对，但所有分数挤在 0.85~0.94，排序脆弱）；
+2. 量化版 102MB 且为**通用动态量化**，不绑定 CPU 架构，双机（Windows / MacBook）开发无需重新导出；
+3. 即便 pooling 方式与 BGE 官方约定不一致（mean vs CLS），实测仍大幅领先，因此不引入自研实现。
+
+**遗留优化点**：BGE 官方建议给查询加检索指令前缀「为这个句子生成表示以用于检索相关文章：」。
+该处理应在 `RagService` 实现时应用到 **query 一侧**（passage 一侧不加），届时用真实站内文章复测。
+
+#### 6.8.5 对 M15 后续实现的硬约束
+
+1. **Redis 向量索引 `DIM` 必须写 768**，与选定模型一致；写错会导致 `FT.CREATE` 失败（呼应 3.2 节约束）。
+2. 每个 Spring 上下文启动都会加载 ONNX 会话（缓存命中时约 2 秒），全量测试的启动开销以此为基线；
+   模型文件已缓存时**不需要网络**。
+3. 更换模型只改 `src/main/resources/application.yml` 与 `src/test/resources/application.yml` 两处的
+   `model-uri` / `tokenizer.uri`，但**必须同步修改 Redis 索引 DIM**，
+   并重跑 `OnnxEmbeddingSmokeTest`（维度与区分度下限）与 `EmbeddingModelComparisonProbe`（排序质量）。
+
 ---
 
 ## 七、风险记录
 
 | 风险 | 影响面 | 缓解措施 | 状态 |
 | --- | --- | --- | --- |
-| ONNX 模型首次加载需外网下载 | M15 可能阻塞 | 提前用 `optimum-cli` 导出并用 `modelUri` 指向本地文件 | 待验证 |
+| ~~ONNX 模型首次加载需外网下载~~ | ~~M15 可能阻塞~~ | 实测用 `cache.directory` 固定到 `~/.cache/bitforum-onnx`，首次下载后离线可用（见 6.8.2） | **已解决** |
 | ~~Redis 镜像更换影响 M11 指标同步~~ | ~~M11 功能回归~~ | 已验证端口协议不变、三类数据结构正常 | **已消除**（见 5.5） |
 | ~~Redis Stack 模块未加载~~ | ~~向量检索不可用~~ | 已定位为 `command` 覆盖 entrypoint，改用 `REDIS_ARGS` 后模块正常加载 | **已解决**（见 5.1） |
 | Spring AI 1.1.8 与 Boot 3.4.5 潜在冲突 | M13 起步 | 已确认官方支持；若冲突回退 `spring-ai-starter-model-openai` + 自定义 base-url | 待验证 |

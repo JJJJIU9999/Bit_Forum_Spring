@@ -47,6 +47,19 @@ spring:
         # 默认关闭真实 AI 调用：常规测试不依赖网络与真实 Key。
         # 需要真实调用验证时（DeepSeekSmokeTest）用环境变量 DEEPSEEK_CHAT_ENABLED=true 打开。
         enabled: ${DEEPSEEK_CHAT_ENABLED:false}
+    embedding:
+      transformer:
+        # ===== M15：与 src/main/resources/application.yml 保持一致 =====
+        # 测试类路径下的 application.yml 会整体覆盖主配置（同名文件优先），因此这里必须重复一遍；
+        # 否则测试上下文会把模型缓存到系统临时目录，且模型来源与生产不一致。
+        # 模型选型依据见 findings.md 6.8（bge-base-zh-v1.5，维度 768）。
+        onnx:
+          model-uri: https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main/onnx/model_quantized.onnx
+        tokenizer:
+          uri: https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main/tokenizer.json
+        cache:
+          enabled: true
+          directory: ${user.home}/.cache/bitforum-onnx
 
 jwt:
   secret: bit-forum-test-secret-minimum-32-bytes

@@ -53,6 +53,29 @@ spring:
           # 且同样支持 Tool Calls 与 JSON Output，满足 M14-M17 的工具调用与结构化输出需求。
           model: deepseek-flash
           temperature: 0.7
+    embedding:
+      transformer:
+        # ===== M15：本地 ONNX 嵌入模型（RAG 的向量化来源） =====
+        # 选型依据（findings.md 6.8 的三模型实测）：同一批中文查询-文档样本上，
+        #   bge-base-zh-v1.5         → 相关文档排第一 5/5，平均区分度 +0.1914
+        #   multilingual-e5-small    → 5/5，但平均区分度仅 +0.0493（排序脆弱）
+        #   all-MiniLM-L6-v2（英文） → 仅 2/5，平均区分度 -0.0507（检索不可用）
+        # 因此选用 bge-base-zh-v1.5。用它的通用动态量化版（约 102MB，不绑定 CPU 架构），
+        # 维度 **768** —— Redis 向量索引的 DIM 必须写成 768，写错会导致 FT.CREATE 失败。
+        #
+        # 说明：TransformersEmbeddingModel 内部是硬编码的 mean pooling，而 BGE 官方推荐 CLS pooling；
+        # 实测即便如此 bge 仍明显优于其他候选，故不改用自研实现。BGE 官方建议给“查询”加检索指令前缀
+        # （“为这个句子生成表示以用于检索相关文章：”），这一处理在 RagService 侧做，不在模型配置里。
+        onnx:
+          model-uri: https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main/onnx/model_quantized.onnx
+        tokenizer:
+          uri: https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main/tokenizer.json
+        cache:
+          # 默认缓存目录是 ${java.io.tmpdir}/spring-ai-model-cache，macOS 会定期清理
+          # 系统临时目录，导致演示前重新下载（约 102MB）。固定到用户级持久目录，
+          # 首次下载之后即可完全离线运行。
+          enabled: true
+          directory: ${user.home}/.cache/bitforum-onnx
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:604800000}
