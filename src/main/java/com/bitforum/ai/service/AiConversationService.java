@@ -1,10 +1,17 @@
 package com.bitforum.ai.service;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -12,9 +19,12 @@ import com.bitforum.ai.agent.AgentType;
 import com.bitforum.ai.dto.AiConversationResponse;
 import com.bitforum.ai.dto.AiMessageResponse;
 import com.bitforum.ai.entity.AiConversation;
+import com.bitforum.ai.entity.AiKbDocument;
 import com.bitforum.ai.entity.AiMessage;
 import com.bitforum.ai.mapper.AiConversationMapper;
+import com.bitforum.ai.mapper.AiKbDocumentMapper;
 import com.bitforum.ai.mapper.AiMessageMapper;
+import com.bitforum.ai.rag.Citation;
 
 /**
  * AI 会话与消息的业务服务（M13）。
@@ -31,11 +41,14 @@ public class AiConversationService {
 
     private final AiConversationMapper aiConversationMapper;
     private final AiMessageMapper aiMessageMapper;
+    private final AiKbDocumentMapper aiKbDocumentMapper;
 
     public AiConversationService(AiConversationMapper aiConversationMapper,
-                                 AiMessageMapper aiMessageMapper) {
+                                 AiMessageMapper aiMessageMapper,
+                                 AiKbDocumentMapper aiKbDocumentMapper) {
         this.aiConversationMapper = aiConversationMapper;
         this.aiMessageMapper = aiMessageMapper;
+        this.aiKbDocumentMapper = aiKbDocumentMapper;
     }
 
     /**
@@ -89,7 +102,9 @@ public class AiConversationService {
         List<AiMessage> messages = aiMessageMapper.selectList(new LambdaQueryWrapper<AiMessage>()
                 .eq(AiMessage::getConversationId, conversationId)
                 .orderByAsc(AiMessage::getId));
-        return messages.stream().map(this::toResponse).toList();
+        // 引用标题一次性批量查出，避免按消息逐条查询造成 N+1
+        Map<Long, String> titlesByArticleId = loadCitationTitles(messages);
+        return messages.stream().map(message -> toResponse(message, titlesByArticleId)).toList();
     }
 
     /** 保存一条消息，并同步维护会话的消息数与更新时间。 */
@@ -97,10 +112,24 @@ public class AiConversationService {
     public AiMessage saveMessage(Long conversationId, String role, String content,
                                  Integer promptTokens, Integer completionTokens,
                                  Integer totalTokens, Integer latencyMs) {
+        return saveMessage(conversationId, role, content, promptTokens, completionTokens,
+                totalTokens, latencyMs, null);
+    }
+
+    /**
+     * 保存一条消息，并记录该轮回答的引用来源（M15）。
+     *
+     * @param retrievedDocIds 引用的文章 id，逗号分隔；无引用时传 null
+     */
+    @Transactional
+    public AiMessage saveMessage(Long conversationId, String role, String content,
+                                 Integer promptTokens, Integer completionTokens,
+                                 Integer totalTokens, Integer latencyMs, String retrievedDocIds) {
         AiMessage message = new AiMessage();
         message.setConversationId(conversationId);
         message.setRole(role);
         message.setContent(content == null ? "" : content);
+        message.setRetrievedDocIds(retrievedDocIds);
         message.setPromptTokens(promptTokens);
         message.setCompletionTokens(completionTokens);
         message.setTotalTokens(totalTokens);
@@ -168,7 +197,7 @@ public class AiConversationService {
         return response;
     }
 
-    private AiMessageResponse toResponse(AiMessage message) {
+    private AiMessageResponse toResponse(AiMessage message, Map<Long, String> titlesByArticleId) {
         AiMessageResponse response = new AiMessageResponse();
         response.setId(message.getId());
         response.setRole(message.getRole());
@@ -176,6 +205,61 @@ public class AiConversationService {
         response.setTotalTokens(message.getTotalTokens());
         response.setLatencyMs(message.getLatencyMs());
         response.setCreateTime(message.getCreateTime());
+        response.setCitations(parseCitations(message.getRetrievedDocIds(), titlesByArticleId));
         return response;
+    }
+
+    /** 收集本批消息引用到的全部文章 id，一次性查出标题。 */
+    private Map<Long, String> loadCitationTitles(List<AiMessage> messages) {
+        Set<Long> articleIds = messages.stream()
+                .map(AiMessage::getRetrievedDocIds)
+                .filter(StringUtils::hasText)
+                .flatMap(ids -> Arrays.stream(ids.split(",")))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .map(this::parseArticleId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (articleIds.isEmpty()) {
+            return Map.of();
+        }
+        return aiKbDocumentMapper
+                .selectList(new LambdaQueryWrapper<AiKbDocument>().in(AiKbDocument::getArticleId, articleIds))
+                .stream()
+                .collect(Collectors.toMap(AiKbDocument::getArticleId, AiKbDocument::getTitle, (left, right) -> left));
+    }
+
+    /**
+     * 把消息里保存的引用 id 还原成引用列表。
+     *
+     * <p>标题查不到时（文章已被下架并移出知识库）退化为「文章 &lt;id&gt;」，
+     * 仍保留链接，便于用户自行确认。
+     */
+    private List<Citation> parseCitations(String retrievedDocIds, Map<Long, String> titlesByArticleId) {
+        if (!StringUtils.hasText(retrievedDocIds)) {
+            return List.of();
+        }
+        List<Citation> citations = new ArrayList<>();
+        for (String part : retrievedDocIds.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            Long articleId = parseArticleId(trimmed);
+            if (articleId == null) {
+                continue;
+            }
+            citations.add(new Citation(articleId, titlesByArticleId.getOrDefault(articleId, "文章 " + articleId)));
+        }
+        return citations;
+    }
+
+    private Long parseArticleId(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 }

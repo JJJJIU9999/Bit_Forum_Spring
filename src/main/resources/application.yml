@@ -105,6 +105,15 @@ bitforum:
       chunk-size: ${BITFORUM_KB_CHUNK_SIZE:350}
       # 相邻分块的重叠长度，防止完整结论正好落在切分边界被切断。
       chunk-overlap: ${BITFORUM_KB_CHUNK_OVERLAP:50}
+      # 每轮提问召回的片段数上限。检索结果会进入模型上下文，不限制会让 token 随文章库增长失控。
+      top-k: ${BITFORUM_KB_TOP_K:5}
+      # 相似度下限（0~1）。低于该值的片段视为不相关，避免把无关内容塞给模型。
+      similarity-threshold: ${BITFORUM_KB_SIMILARITY_THRESHOLD:0.5}
+      # 单个片段注入模型前的截断长度，控制单轮上下文体量。
+      max-chunk-chars: ${BITFORUM_KB_MAX_CHUNK_CHARS:300}
+      # bge 系列官方建议：查询侧加检索指令前缀，passage 侧不加。
+      # 索引侧的向量计算不带前缀，此处与官方用法保持一致。
+      query-prefix: ${BITFORUM_KB_QUERY_PREFIX:为这个句子生成表示以用于检索相关文章：}
 
 management:
   endpoints:

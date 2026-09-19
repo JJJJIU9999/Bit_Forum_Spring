@@ -156,6 +156,36 @@
   background: var(--paper-soft);
 }
 
+/* M15：回答下方的引用来源，可点击跳转到原帖 */
+.ai-citations {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--line);
+  font-size: 12px;
+  /* 覆盖 .ai-message 的 pre-wrap，引用列表需要正常换行排版 */
+  white-space: normal;
+}
+
+.ai-citations-label {
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+
+.ai-citations ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.ai-citations li + li {
+  margin-top: 2px;
+}
+
+.ai-citation-link {
+  color: var(--forest);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .ai-typing {
   color: var(--ink-faint);
   font-style: italic;

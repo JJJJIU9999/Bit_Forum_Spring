@@ -18,6 +18,7 @@ import com.bitforum.ai.agent.AgentType;
 import com.bitforum.ai.dto.AiMessageResponse;
 import com.bitforum.ai.entity.AiConversation;
 import com.bitforum.ai.memory.MysqlChatMemoryRepository;
+import com.bitforum.ai.rag.Citation;
 import com.bitforum.ai.service.AiConversationService;
 
 /**
@@ -104,9 +105,12 @@ public class AgentOrchestrator {
                 new AgentContext(userId, conversationId, currentInput), history);
         int latencyMs = (int) (System.currentTimeMillis() - startedAt);
 
-        // 7. 保存助手回复并更新会话统计
+        // 7. 保存助手回复并更新会话统计。
+        // M15：本轮引用到的文章 id 一并落库（ai_message.retrieved_doc_ids），
+        // 这样刷新页面重新加载历史消息时引用链接依然在。
         var saved = conversationService.saveMessage(conversationId, "assistant", response.content(),
-                response.promptTokens(), response.completionTokens(), response.totalTokens(), latencyMs);
+                response.promptTokens(), response.completionTokens(), response.totalTokens(), latencyMs,
+                formatCitationIds(response.citations()));
         if (response.degraded()) {
             log.warn("本轮对话走了降级链路，conversationId={}", conversationId);
         }
@@ -120,7 +124,18 @@ public class AgentOrchestrator {
         result.setTotalTokens(saved.getTotalTokens());
         result.setLatencyMs(saved.getLatencyMs());
         result.setCreateTime(saved.getCreateTime());
+        result.setCitations(response.citations());
         return result;
+    }
+
+    /** 把引用来源转成逗号分隔的文章 id，便于落库与回查。 */
+    private String formatCitationIds(List<Citation> citations) {
+        if (citations == null || citations.isEmpty()) {
+            return null;
+        }
+        return citations.stream()
+                .map(citation -> String.valueOf(citation.articleId()))
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     /**

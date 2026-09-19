@@ -12,18 +12,18 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M15 进行中**：模型验证、向量库接入、分块与索引链路已完成；检索与引用未开始 |
+| 当前阶段 | **M15 进行中**：模型验证、向量库、分块索引、检索与引用注入均已完成；异步索引与管理页未做 |
 | 最新 Flyway 迁移 | `V14__add_ai_kb_document.sql`（`ai_kb_document`、`ai_kb_chunk`） |
-| 模块完成度 | M13、M14 已完成；M15 索引链路可用（手动重建）、检索未开始；M16-M18 未开始 |
-| 当前主线 | M15 RAG 知识库与向量检索（下一步：`RagService` 检索 + 引用注入） |
+| 模块完成度 | M13、M14 已完成；M15 核心链路可用（索引→检索→回答带引用）；M16-M18 未开始 |
+| 当前主线 | M15 收尾（下一步：RabbitMQ 异步索引 + 管理端统计页） |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
 | 数据库状态 | MySQL 8.0.46，Flyway V1-V14 全部 success |
-| 测试状态 | **265 项：264 通过 + 1 项条件跳过**（选型探针另有 1 项默认跳过，不计入） |
+| 测试状态 | **268 项：267 通过 + 1 项条件跳过**（另有选型探针与真实调用冒烟各 1 项默认跳过，不计入） |
 | 嵌入模型 | 已定稿 `bge-base-zh-v1.5`（768 维，量化 102MB，缓存于 `~/.cache/bitforum-onnx`） |
 | 向量索引 | `bitforum-kb`（HNSW / FLOAT32 / DIM 768 / COSINE），元数据字段已声明 |
 | 知识库状态 | 可通过 `POST /api/admin/ai/kb/rebuild` 全量重建；集成测试收尾会清空，需要时重建 |
-| 真实调用验证 | 已通过：AI 能调用搜索工具返回真实站内文章；能执行点赞写操作 |
-| 待办 | M15 第三步：`RagService`、QaAgent 引用注入、RabbitMQ 异步索引、管理端统计页 |
+| 真实调用验证 | 已通过：工具调用（M14）；RAG 检索 + 回答带引用（M15-4，引用 articleId=1469） |
+| 待办 | M15 第五步：RabbitMQ 异步索引、管理端知识库统计页 |
 
 ## 总体进度
 
@@ -796,9 +796,62 @@ jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**而不是 
 重建会写入 Redis 向量，而 `@Transactional` 只能回滚 MySQL，会留下孤儿向量；
 重建的业务正确性由 `KbIndexServiceTest` 覆盖。
 
-### 下一步：M15 第三步（待用户确认）
+### M15-4：检索服务与回答引用注入
 
-- `RagService`：语义检索（只取已发布、限制 topK 与片段长度以控制 token）
-- 把检索结果注入 QaAgent 上下文，回答带可点击的原帖引用
-- 异步索引走 RabbitMQ（复用既有 DLQ + 手动 ACK + Redis 幂等套路）
-- 管理端知识库统计页
+- **Status:** complete
+
+#### 产出
+
+| 类型 | 文件 | 说明 |
+| --- | --- | --- |
+| 服务 | `ai/rag/RagService.java` | 语义检索：状态过滤 + 二次校验 + topK/长度限制 |
+| 模型 | `ai/rag/Citation.java` | 引用来源 record（articleId + title） |
+| 修改 | `ai/agent/QaAgent.java` | 每轮先检索、注入片段、提示词增加引用规则 |
+| 修改 | `ai/agent/AgentResponse.java` | 增加 `citations` |
+| 修改 | `ai/orchestrator/AgentOrchestrator.java` | 引用落库 + 直接返回前端 |
+| 修改 | `ai/service/AiConversationService.java` | 保存与还原引用（批量查标题，避免 N+1） |
+| 修改 | `ai/dto/AiMessageResponse.java` | 增加 `citations` |
+| 修改 | `application.yml` | `top-k` / `similarity-threshold` / `max-chunk-chars` / `query-prefix` |
+| 前端 | `AiAssistantPanel.jsx`、`styles/ai-panel.css` | 助手消息下方渲染「参考来源」可点击链接 |
+| 测试 | `RagServiceTest`（3 项）、`RagQaSmokeTest`（1 项，默认跳过） | |
+
+#### 关键设计决策
+
+1. **不用 `QuestionAnswerAdvisor`，改为自己拼检索上下文**。
+   计划书写的是接入 `QuestionAnswerAdvisor`，实施时改为主张：
+   M14 的工具调用已经占用了 prompt 组装，框架 advisor 会再改写一遍 prompt，
+   两者叠加后 token 不可控、引用来源也难以精确记录；
+   自己拼可以精确控制片段数量与长度，并把**引用独立于模型输出**——
+   即使模型忘记标注编号，前端仍能显示可点击链接。
+2. **三重召回约束**：检索请求带 `status == 'PUBLISHED'` 过滤 → 召回后二次校验 →
+   `topK=5`、每段截断 300 字（M14 已观察到工具调用把单轮 token 推到 8000+）。
+3. **二次校验查 `article` 表的当前状态，而不是索引快照**：
+   文章下架后若索引消息尚未消费，Redis 中仍有旧向量，只查 `ai_kb_document`
+   （索引时快照）会漏判。`RagServiceTest` 专门覆盖了这条兜底。
+4. **BGE 查询前缀**：query 侧加「为这个句子生成表示以用于检索相关文章：」（passage 侧不加），
+   落实 findings.md 6.8.4 记录的遗留优化点。
+5. **检索片段不写入会话记忆**：只作为本轮上下文注入，不随轮次累积、不污染后续对话。
+
+#### 验证记录
+
+| 验证项 | 结果 |
+| --- | --- |
+| 检索召回 | 相关文章被召回（1 段，29 ms），引用自带标题 |
+| **下架兜底** | 只改 `article.status`、不重建索引时，检索不再召回该文章 |
+| 空查询 | 不触发向量检索 |
+| **真实链路（DeepSeek）** | 回答「根据站内《玄武岩缓存策略说明》[1]，它的失效处理方式是这样的：…」；引用来源 = `[Citation[articleId=1469, title=玄武岩缓存策略说明]]`；合计 3014 token |
+| 引用持久化 | 引用 id 写入 `ai_message.retrieved_doc_ids`，刷新页面重新加载历史时链接仍在 |
+| 前端 | 助手消息下方渲染「参考来源」列表，点击跳转 `/articles/:id` |
+| `mvn test`（全量） | **Tests run: 268, Failures: 0, Errors: 0, Skipped: 1**；39.2 秒 |
+| `npm test` / `npm run build` | 23 项通过 / 构建通过 |
+
+#### 遗留
+
+- 相似度阈值当前为 0.5，文章库变大后需要用真实数据复测（避免过严导致漏召回）。
+- 异步索引（文章发布/更新/下架自动重建）与管理端统计页仍属于 M15 后续步骤。
+
+### 下一步：M15 第五步（待用户确认）
+
+- 异步索引走 RabbitMQ（复用既有 DLQ + 手动 ACK + Redis 幂等套路），
+  在文章发布、修改、下架时自动更新知识库
+- 管理端知识库统计页（消费 `GET /api/admin/ai/kb/stats`）

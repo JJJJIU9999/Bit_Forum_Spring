@@ -1,6 +1,9 @@
 package com.bitforum.ai.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
+
+import com.bitforum.ai.rag.Citation;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -20,4 +23,7 @@ public class AiMessageResponse {
     private Integer latencyMs;
     @Schema(description = "创建时间")
     private LocalDateTime createTime;
+    /** M15：本轮回答引用的站内文章，前端据此渲染可点击的原帖链接 */
+    @Schema(description = "RAG 引用来源；仅助手消息可能非空")
+    private List<Citation> citations;
 }

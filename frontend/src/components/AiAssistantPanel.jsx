@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { Bot, MessageSquarePlus, Send, Sparkles, X } from 'lucide-react'
 import {
   createConversation,
@@ -152,7 +153,7 @@ function AiAssistantPanel() {
           <div className="ai-empty">
             <p>你好，我是 BitForum 的 AI 助手。</p>
             <p className="ai-empty-hint">
-              目前可以多轮对话；站内文章检索与工具调用正在建设中。
+              可以多轮对话、查询与操作站内数据，并基于站内文章作答（回答下方会列出参考来源）。
             </p>
           </div>
         )}
@@ -161,7 +162,24 @@ function AiAssistantPanel() {
           <div key={message.id} className={`ai-message ai-message-${message.role}`}>
             {/* 助手回答是 Markdown，需要渲染；用户输入按纯文本显示，避免被当作语法解析 */}
             {message.role === 'assistant' ? (
-              <MarkdownText content={message.content} />
+              <>
+                <MarkdownText content={message.content} />
+                {/* M15：检索命中的站内文章，点击跳到原帖 */}
+                {message.citations?.length > 0 && (
+                  <div className="ai-citations">
+                    <span className="ai-citations-label">参考来源</span>
+                    <ul>
+                      {message.citations.map((citation) => (
+                        <li key={citation.articleId}>
+                          <Link to={`/articles/${citation.articleId}`} className="ai-citation-link">
+                            {citation.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             ) : (
               message.content
             )}
