@@ -28,7 +28,37 @@ public class RabbitMQConfig {
     public static final String ARTICLE_PUBLISH_DLQ_ROUTING_KEY = "article.publish.dlq";
     public static final String ARTICLE_PUBLISH_DLQ = "article.publish.dlq";
 
+    // M15：知识库索引队列。复用同一个 article.exchange，但用独立队列与独立死信队列，
+    // 与既有的文章发布通知互不影响（findings.md 待验证事项 T8）。
+    public static final String KB_INDEX_QUEUE = "article.kb.index.queue";
+    public static final String KB_INDEX_ROUTING_KEY = "article.kb.index";
+    public static final String KB_INDEX_DLQ_ROUTING_KEY = "article.kb.index.dlq";
+    public static final String KB_INDEX_DLQ = "article.kb.index.dlq";
+
     private static final Logger log = LoggerFactory.getLogger(RabbitMQConfig.class);
+
+    @Bean
+    public Queue kbIndexQueue() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("x-dead-letter-exchange", ARTICLE_DLX_EXCHANGE);
+        args.put("x-dead-letter-routing-key", KB_INDEX_DLQ_ROUTING_KEY);
+        return new Queue(KB_INDEX_QUEUE, true, false, false, args);
+    }
+
+    @Bean
+    public Queue kbIndexDlq() {
+        return new Queue(KB_INDEX_DLQ, true);
+    }
+
+    @Bean
+    public Binding kbIndexBinding(Queue kbIndexQueue, DirectExchange articleExchange) {
+        return BindingBuilder.bind(kbIndexQueue).to(articleExchange).with(KB_INDEX_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding kbIndexDlqBinding(Queue kbIndexDlq, DirectExchange articleDlxExchange) {
+        return BindingBuilder.bind(kbIndexDlq).to(articleDlxExchange).with(KB_INDEX_DLQ_ROUTING_KEY);
+    }
 
     @Bean
     public Queue articlePublishQueue() {

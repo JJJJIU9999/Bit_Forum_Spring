@@ -16,6 +16,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -31,6 +33,7 @@ import com.bitforum.mapper.ArticleFavoriteMapper;
 import com.bitforum.mapper.ArticleMapper;
 import com.bitforum.mapper.CategoryMapper;
 import com.bitforum.message.ArticlePublishMessage;
+import com.bitforum.message.KbIndexMessage;
 
 @Service
 public class ArticleService {
@@ -341,6 +344,8 @@ public class ArticleService {
         articleMapper.updateById(article);
         recordAudit(articleId, auditorId, STATUS_PUBLISHED, null);
         sendPublishMessage(article, auditorId);
+        // M15：文章进入已发布状态，异步写入知识库
+        sendKbIndexMessage(articleId);
         log.info("文章审核通过，MQ 消息已发送");
     }
 
@@ -376,6 +381,8 @@ public class ArticleService {
         recordAudit(articleId, auditorId, STATUS_OFFLINE, reason);
         redisService.deleteArticleData(articleId);
         notificationService.notifyArticleOffline(article, auditorId, reason);
+        // M15：文章离开已发布状态，异步把它的向量移出知识库
+        sendKbIndexMessage(articleId);
     }
 
     private Article createArticle(String title, String content, Long categoryId, Long userId, String status, String coverUrl) {
@@ -420,6 +427,8 @@ public class ArticleService {
         articleFavoriteMapper.delete(new QueryWrapper<ArticleFavorite>().eq("article_id", articleId));
         articleMapper.deleteById(articleId);
         redisService.deleteArticleData(articleId);
+        // M15：文章被删除后，知识库索引也要移除（消费者查不到文章即按移除处理）
+        sendKbIndexMessage(articleId);
     }
 
     private void sendPublishMessage(Article article, Long auditorId) {
@@ -435,6 +444,43 @@ public class ArticleService {
                 RabbitMQConfig.ARTICLE_EXCHANGE,
                 RabbitMQConfig.ARTICLE_PUBLISH_ROUTING_KEY,
                 articlePublishMessage);
+    }
+
+    /**
+     * 发送知识库索引消息（M15）。
+     *
+     * <p><b>必须在事务提交后发送。</b>如果直接在事务内发送，消费者可能在事务提交前就查到旧状态：
+     * 例如审核通过时文章在库里仍是 PENDING，监听器会把它判定为「不该在知识库中」而移除索引，
+     * 随后事务提交把文章改成 PUBLISHED，却不会再触发索引 —— 造成永久漏索引。
+     * 因此这里注册事务同步回调，等提交完成再投递。
+     */
+    private void sendKbIndexMessage(Long articleId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    doSendKbIndexMessage(articleId);
+                }
+            });
+            return;
+        }
+        doSendKbIndexMessage(articleId);
+    }
+
+    private void doSendKbIndexMessage(Long articleId) {
+        KbIndexMessage message = new KbIndexMessage();
+        message.setArticleId(articleId);
+        message.setMessageId(UUID.randomUUID().toString());
+        try {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.ARTICLE_EXCHANGE,
+                    RabbitMQConfig.KB_INDEX_ROUTING_KEY,
+                    message);
+        } catch (RuntimeException e) {
+            // 知识库索引是增强能力：MQ 不可用时不能反过来影响发帖、下架等主流程。
+            // 漏掉的消息可以在恢复后通过管理员的全量重建接口补齐。
+            log.error("知识库索引消息发送失败：articleId={}", articleId, e);
+        }
     }
 
     private void recordAudit(Long articleId, Long auditorId, String auditStatus, String reason) {

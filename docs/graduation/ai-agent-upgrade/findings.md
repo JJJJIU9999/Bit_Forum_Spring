@@ -753,7 +753,7 @@ SPRING_DATASOURCE_PASSWORD=... SPRING_RABBITMQ_PASSWORD=... JWT_SECRET=... mvn t
 | T5 | `RedisVectorStore` 元数据过滤在实际数据上生效 | M15 检索验证 | **已验证通过**（见 6.9）：封装层过滤生效，OFFLINE 内容未被召回 |
 | T6 | 单轮对话的真实 Token 消耗与费用 | M13 结束后首次统计 | 待验证 |
 | T7 | 结构化输出在 DeepSeek 上的稳定性 | M16 审核 Agent 验证 | 待验证 |
-| T8 | 异步索引队列与既有 `ArticlePublishMessage` 队列不冲突 | M15 接入 RabbitMQ 时验证 | 待验证 |
+| T8 | 异步索引队列与既有 `ArticlePublishMessage` 队列不冲突 | M15 接入 RabbitMQ 时验证 | **已验证通过**（见 6.10）：独立队列 + 独立死信队列，端到端测试两条链路互不影响 |
 
 ### 6.1 T1/T2 验证执行记录（2026-09-18）
 
@@ -1161,6 +1161,51 @@ jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**
 #### 6.9.5 新增数据库对象
 
 V14 已应用（`flyway_schema_history` version=14、success=1）：`ai_kb_document`、`ai_kb_chunk`。
+
+### 6.10 M15 异步索引的两个实现要点（T8 验证）
+
+**T8 结论：通过。** 知识库索引使用独立队列 `article.kb.index.queue` 与独立死信队列
+`article.kb.index.dlq`（复用同一个 `article.exchange`，靠 routingKey 区分），
+与既有的 `article.publish.queue` 完全隔离；端到端测试实测两条链路各自独立工作。
+
+#### 6.10.1 消息必须在事务提交后发送（否则会永久漏索引）
+
+`ArticleService.approve()` / `offline()` / `delete()` 都是 `@Transactional`。
+若在事务内直接 `convertAndSend`，消费者可能在事务提交前就处理消息：
+
+```text
+approve() 事务内：article.status 仍是 PENDING
+   → 消费者 selectById 读到 PENDING
+   → 判定「不该在知识库中」→ removeArticle
+   → 事务随后提交，文章变成 PUBLISHED
+   → 但不会再触发索引 ⇒ 这篇文章永远不会被索引
+```
+
+**应对**：`sendKbIndexMessage` 通过 `TransactionSynchronizationManager` 注册 `afterCommit` 回调，
+事务提交后才投递。测试类 `KbIndexTriggerTest` 因此**刻意不加 `@Transactional`** ——
+测试事务一旦回滚，afterCommit 根本不会执行，就验证不到真实行为。
+
+#### 6.10.2 消费者按文章当前状态决定写入还是移除
+
+消息只携带 `articleId`，消费者重新查库后再决定：
+
+| 消费时的文章状态 | 动作 |
+| --- | --- |
+| `PUBLISHED` | `indexArticle` 写入/更新索引 |
+| 其它状态 | `removeArticle` 移出知识库 |
+| 查不到（已删除） | `removeArticle` 移出知识库 |
+
+这样「审核通过 / 下架 / 删除」三个触发点共用一种消息类型，
+消息堆积后也能按最新状态收敛，不会出现"先入队再回滚"造成的不一致。
+
+#### 6.10.3 端到端实测
+
+`KbAutoIndexIntegrationTest` 通过真实 RabbitMQ 验证：
+
+```text
+审核通过 → 异步入库（轮询等待，实测秒级完成）→ INDEXED + 分块记录一致 → 可被语义检索召回
+下架     → 异步移除 → 文档记录消失 → 检索结果中不再出现
+```
 
 ---
 

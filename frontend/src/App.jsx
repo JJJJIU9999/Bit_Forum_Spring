@@ -17,6 +17,7 @@ import ManageComments from './pages/admin/ManageComments.jsx'
 import ManageReports from './pages/admin/ManageReports.jsx'
 import ManageUsers from './pages/admin/ManageUsers.jsx'
 import ManageCategories from './pages/admin/ManageCategories.jsx'
+import KnowledgeBase from './pages/admin/KnowledgeBase.jsx'
 import { clearAuth, getCurrentUser } from './api/request.js'
 import { getUnreadNotificationCount } from './api/notificationApi.js'
 
@@ -71,6 +72,7 @@ function App() {
           <Route path="reports" element={<ManageReports />} />
           <Route path="users" element={<ManageUsers />} />
           <Route path="categories" element={<ManageCategories />} />
+          <Route path="kb" element={<KnowledgeBase />} />
         </Route>
       </Route>
 

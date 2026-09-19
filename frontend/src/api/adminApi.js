@@ -111,3 +111,12 @@ export function resolveReport(payload) {
 export function rejectReport(payload) {
   return request.put('/admin/reports/reject', payload)
 }
+
+// M15：AI 知识库统计与全量重建（文章分块、向量化后的入库状态）。
+export function getKbStats() {
+  return request.get('/admin/ai/kb/stats')
+}
+
+export function rebuildKnowledgeBase() {
+  return request.post('/admin/ai/kb/rebuild')
+}

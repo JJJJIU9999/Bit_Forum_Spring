@@ -67,3 +67,70 @@
   .admin-topbar .ghost-button { padding: 8px 10px; font-size: 12px; }
   .admin-body { padding: 28px 14px 45px; }
 }
+
+/* M15：AI 知识库管理页 */
+.kb-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 18px 0 14px;
+}
+
+.kb-stat-card {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+.kb-stat-card.is-warning {
+  border-color: #f0d3c9;
+  background: var(--terracotta-soft);
+}
+
+.kb-stat-label {
+  color: var(--ink-faint);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kb-stat-card strong {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 26px;
+  letter-spacing: -.03em;
+}
+
+.kb-stat-hint {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.kb-model-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.kb-model-hint {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.kb-warning {
+  margin: 0;
+  padding: 11px 14px;
+  color: var(--terracotta);
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid #f0d3c9;
+  border-radius: var(--radius-sm);
+  background: var(--terracotta-soft);
+}

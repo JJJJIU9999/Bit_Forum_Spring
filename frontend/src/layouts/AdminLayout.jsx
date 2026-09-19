@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BarChart3, BookOpenText, ClipboardCheck, FileText, Flag, FolderCog, Menu, MessageSquare, ShieldCheck, Users, X } from 'lucide-react'
+import { BarChart3, BookOpenText, ClipboardCheck, Database, FileText, Flag, FolderCog, Menu, MessageSquare, ShieldCheck, Users, X } from 'lucide-react'
 import { Link, NavLink } from 'react-router'
 
 const NAV_GROUPS = [
@@ -22,6 +22,10 @@ const NAV_GROUPS = [
       { to: '/admin/users', label: '用户管理', icon: Users },
       { to: '/admin/categories', label: '板块管理', icon: FolderCog },
     ],
+  },
+  {
+    label: 'AI 能力',
+    items: [{ to: '/admin/kb', label: '知识库', icon: Database }],
   },
 ]
 
