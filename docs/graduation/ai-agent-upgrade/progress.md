@@ -919,7 +919,8 @@ jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**而不是 
 | 连锁现象 | 226 个 errors 全部来自 Spring 的 "context failure threshold exceeded"，**不是 226 个独立缺陷** |
 | 本地复现 | 用 `redis:7-alpine` 容器（6380 端口）跑单测，得到完全相同的异常链，确认因果 |
 | 修复 | `.github/workflows/ci.yml` 的 redis 镜像改为 `redis/redis-stack-server:7.4.0-v8`（不加 `command` 覆盖，否则模块不加载） |
-| 验证 | 用**全新** Redis Stack 容器（0 索引，等同 CI 干净环境）跑全量 → **278 项通过**；索引自动创建且 `dim = 768` |
+| 本地验证 | 用**全新** Redis Stack 容器（0 索引，等同 CI 干净环境）跑全量 → **278 项通过**；索引自动创建且 `dim = 768` |
+| **CI 实测** | 推送后 run `35422730508`：**backend 与 frontend 两个 job 均通过**（backend 2m18s，日志为 `Tests run: 278, Failures: 0, Errors: 0, Skipped: 2` + `BUILD SUCCESS`）；runner 上模型成功下载、索引自动创建 |
 
 **有意不采用的做法**（保留 CI 的有效覆盖）：删除或跳过向量相关测试、在 CI 关闭 `initialize-schema`、跳过 backend job。
 

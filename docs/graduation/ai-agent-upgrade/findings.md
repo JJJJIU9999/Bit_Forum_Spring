@@ -1247,6 +1247,10 @@ SPRING_DATA_REDIS_PORT=6380 ./mvnw -Dtest=RedisVectorStoreSmokeTest test
 **修复验证**：用一个**全新的** Redis Stack 容器（0 索引，等同 CI 的干净环境）跑全量测试 →
 **278 项通过**；索引 `bitforum-kb` 被自动创建且 `dim = 768`。
 
+**CI 实测**：推送后 run `35422730508` 的 backend 与 frontend 两个 job **均通过**；
+backend 日志为 `Tests run: 278, Failures: 0, Errors: 0, Skipped: 2` 与 `BUILD SUCCESS`，
+且可见 ONNX 模型在 runner 上成功下载（`/home/runner/.cache/bitforum-onnx`）、索引自动创建。
+
 **教训**：引入新的中间件能力（如 RediSearch）时，必须同步检查 CI 与部署环境是否具备该能力。
 **本地测试全绿不能证明 CI 可用** —— 两者的中间件镜像可能不同；环境配置属于代码的一部分，
 应与依赖变更一起提交。
