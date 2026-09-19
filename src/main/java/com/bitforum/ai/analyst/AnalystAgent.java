@@ -6,10 +6,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.dto.AdminDashboardSummaryResponse;
 import com.bitforum.service.AdminDashboardService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -105,15 +107,18 @@ public class AnalystAgent {
     private final AdminDashboardService dashboardService;
     private final ObjectMapper objectMapper;
     private final String modelName;
+    private final TraceRecorder traceRecorder;
 
     public AnalystAgent(ObjectProvider<ChatClient> chatClientProvider,
                         AdminDashboardService dashboardService,
                         ObjectMapper objectMapper,
-                        @Value("${bitforum.ai.analyst.model-name:deepseek-flash}") String modelName) {
+                        @Value("${bitforum.ai.analyst.model-name:deepseek-flash}") String modelName,
+                        TraceRecorder traceRecorder) {
         this.chatClientProvider = chatClientProvider;
         this.dashboardService = dashboardService;
         this.objectMapper = objectMapper;
         this.modelName = modelName;
+        this.traceRecorder = traceRecorder;
     }
 
     /**
@@ -156,12 +161,16 @@ public class AnalystAgent {
 
         AnalystTools tools = new AnalystTools(summary);
         try {
-            ChatResponse response = chatClient.prompt()
+            // M18：与 QA 链路同一处理 —— 工具执行循环在 provider 内部完成，
+            // 只有包装成带轨迹采集的回调才能记录"模型查了哪些数据"（T12 实测结论）
+            ToolCallback[] toolCallbacks = traceRecorder.wrapTools(tools);
+            ChatClient.ChatClientRequestSpec requestSpec = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
-                    .user("请分析当前社区的运营状况，并给出建议。")
-                    .tools(tools)
-                    .call()
-                    .chatResponse();
+                    .user("请分析当前社区的运营状况，并给出建议。");
+            if (toolCallbacks.length > 0) {
+                requestSpec = requestSpec.toolCallbacks(toolCallbacks);
+            }
+            ChatResponse response = requestSpec.call().chatResponse();
 
             long latency = System.currentTimeMillis() - startedAt;
             String content = response == null || response.getResult() == null

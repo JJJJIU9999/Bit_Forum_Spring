@@ -33,6 +33,7 @@ import com.bitforum.ai.recommend.RecommendRecallService.RecalledArticle;
 import com.bitforum.ai.recommend.RecommendService.RecommendRequest;
 import com.bitforum.ai.recommend.RecommendService.RecommendResult;
 import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
+import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleFavorite;
 import com.bitforum.entity.Category;
@@ -89,7 +90,8 @@ class RecommendServiceTest {
         categoryMapper = mock(CategoryMapper.class);
         logMapper = mock(AiRecommendLogMapper.class);
         service = new RecommendService(recallService, fusionService, reasonAgent, articleMapper,
-                favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true, true);
+                favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true, true,
+                mock(TraceRecorder.class));
     }
 
     /** 候选为空：返回空列表 + 降级标记，不抛异常、不写记录。 */
@@ -252,7 +254,8 @@ class RecommendServiceTest {
     @Test
     void shouldSkipReasonGenerationWhenDisabled() {
         RecommendService withoutReason = new RecommendService(recallService, fusionService, reasonAgent,
-                articleMapper, favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true, false);
+                articleMapper, favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true,
+                false, mock(TraceRecorder.class));
         when(recallService.recall(any())).thenReturn(List.of(
                 new RecalledArticle(85L, RecallSource.VECTOR, 1, 0.77)));
         when(fusionService.fuse(any(), any(), anyInt())).thenReturn(List.of(

@@ -2,6 +2,7 @@ package com.bitforum.ai.orchestrator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,9 +25,11 @@ import com.bitforum.ai.agent.AgentContext;
 import com.bitforum.ai.agent.AgentResponse;
 import com.bitforum.ai.agent.AgentType;
 import com.bitforum.ai.agent.QaAgent;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.bitforum.ai.dto.AiConversationResponse;
 import com.bitforum.ai.dto.AiMessageResponse;
 import com.bitforum.ai.entity.AiConversation;
+import com.bitforum.ai.entity.AiExecutionTrace;
 import com.bitforum.ai.mapper.AiConversationMapper;
 import com.bitforum.ai.service.AiConversationService;
 
@@ -109,6 +112,8 @@ class AgentOrchestratorTest {
     private AiConversationMapper aiConversationMapper;
     @Autowired
     private TestRoutingAgent testRoutingAgent;
+    @Autowired
+    private com.bitforum.ai.mapper.AiExecutionTraceMapper traceMapper;
 
     /** 真实 QaAgent 保留在容器里用于验证路由注册；它不会被本测试调用。 */
     @MockitoBean
@@ -217,8 +222,62 @@ class AgentOrchestratorTest {
         assertEquals(2, conversationService.listMessages(conversationId, 83007L).size());
     }
 
-    // ==================== 辅助方法 ====================
+    /**
+     * M18：一轮对话必须留下**一条**执行轨迹，且轨迹里有路由与落库两步。
+     *
+     * <p>这是"埋点真的接上了"的最小验证 —— 埋点写错位置时最常见的表现就是
+     * 功能照常工作、但轨迹表里什么都没有（属于静默失效）。
+     */
+    @Test
+    void shouldRecordExecutionTraceForChat() {
+        Long conversationId = createConversation(83008L, AgentType.RECOMMEND);
 
+        orchestrator.chat(conversationId, 83008L, "轨迹测试");
+
+        List<AiExecutionTrace> traces = traceMapper.selectList(
+                new LambdaQueryWrapper<AiExecutionTrace>()
+                        .eq(AiExecutionTrace::getScene, AiExecutionTrace.SCENE_CHAT)
+                        .eq(AiExecutionTrace::getConversationId, conversationId));
+        assertEquals(1, traces.size(), "一轮对话应产生且只产生一条执行轨迹");
+
+        AiExecutionTrace trace = traces.get(0);
+        assertEquals(AiExecutionTrace.STATUS_SUCCESS, trace.getStatus());
+        assertEquals(AgentType.RECOMMEND.name(), trace.getAgentType());
+        assertEquals(83008L, trace.getUserId());
+        assertEquals(2, trace.getStepCount(), "至少应有 ROUTE 与 PERSIST 两步");
+        assertTrue(trace.getSteps().contains("\"ROUTE\""), "轨迹应包含路由步骤：" + trace.getSteps());
+        assertTrue(trace.getSteps().contains("\"PERSIST\""), "轨迹应包含落库步骤：" + trace.getSteps());
+        assertEquals(120, trace.getTotalTokens(), "token 应随轨迹一并记录");
+        assertNotNull(trace.getRoute(), "列表页要能一眼看到分派结果，route 字段应已派生");
+        assertNull(trace.getDegradeReason(), "正常回答不应带降级原因");
+    }
+
+    /**
+     * 轨迹状态由**显式标记**驱动，而不是靠返回值的形状猜。
+     *
+     * <p>这条测试锁定 {@code TraceRecorder} 的契约：只有链路中调用过
+     * {@code degrade(...)}（QaAgent 的真实降级点、M18 模块 3 的 Guard 都会调）才会记为
+     * {@code DEGRADED}。测试 Agent 直接返回 {@code AgentResponse.degraded(...)} 但没有标记，
+     * 因此轨迹仍是 {@code SUCCESS} —— 这是刻意为之：靠"返回值长什么样"反推状态，
+     * 迟早会把"部分降级"（例如只有检索失败、回答正常）判错。
+     */
+    @Test
+    void shouldKeepSuccessStatusWhenDegradeIsNotExplicitlyMarked() {
+        Long conversationId = createConversation(83009L, AgentType.RECOMMEND);
+        testRoutingAgent.willReturn(AgentResponse.degraded("AI 服务暂时不可用，请稍后重试。"));
+
+        orchestrator.chat(conversationId, 83009L, "降级轨迹测试");
+
+        List<AiExecutionTrace> traces = traceMapper.selectList(
+                new LambdaQueryWrapper<AiExecutionTrace>()
+                        .eq(AiExecutionTrace::getScene, AiExecutionTrace.SCENE_CHAT)
+                        .eq(AiExecutionTrace::getConversationId, conversationId));
+        assertEquals(1, traces.size());
+        assertEquals(AiExecutionTrace.STATUS_SUCCESS, traces.get(0).getStatus(),
+                "未调用 degrade(...) 时不应自动推断为降级");
+    }
+
+    // ==================== 辅助方法 ====================
     /**
      * 创建会话并把 agentType 改成指定类型。
      * 走 Service 创建再更新，而不是直接 insert，目的是同时覆盖 Service 的默认值逻辑。

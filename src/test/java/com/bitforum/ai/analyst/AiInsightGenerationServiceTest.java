@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.bitforum.ai.entity.AiInsightReport;
+import com.bitforum.ai.trace.TraceRecorder;
 
 /**
  * 运营洞察异步触发的单元测试（M17）。
@@ -39,7 +40,10 @@ class AiInsightGenerationServiceTest {
     void setUp() {
         insightService = mock(AiInsightService.class);
         analystAgent = mock(AnalystAgent.class);
-        service = new AiInsightGenerationService(insightService, analystAgent, Runnable::run);
+        // M18：轨迹记录器在这里只作为依赖存在（mock 的 start 返回 null，轨迹相关调用全部静默），
+        // 本测试关心的是"触发 → 生成 → 写回"的时序，与轨迹无关
+        service = new AiInsightGenerationService(insightService, analystAgent, Runnable::run,
+                mock(TraceRecorder.class));
     }
 
     @Test

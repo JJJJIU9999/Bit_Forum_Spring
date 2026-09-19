@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.MessagePostProcessor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -76,7 +77,8 @@ class ModerationTriggerTest {
         verify(rabbitTemplate).convertAndSend(
                 eq(RabbitMQConfig.ARTICLE_EXCHANGE),
                 eq(RabbitMQConfig.MODERATION_ROUTING_KEY),
-                any(ModerationMessage.class));
+                any(ModerationMessage.class),
+                any(MessagePostProcessor.class));
     }
 
     @Test
@@ -89,7 +91,8 @@ class ModerationTriggerTest {
         verify(rabbitTemplate).convertAndSend(
                 eq(RabbitMQConfig.ARTICLE_EXCHANGE),
                 eq(RabbitMQConfig.MODERATION_ROUTING_KEY),
-                any(ModerationMessage.class));
+                any(ModerationMessage.class),
+                any(MessagePostProcessor.class));
     }
 
     private Article insertArticle(String status) {

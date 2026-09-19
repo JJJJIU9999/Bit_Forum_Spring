@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.ai.trace.TraceHeaders;
 import com.bitforum.config.RabbitMQConfig;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleAuditRecord;
@@ -495,10 +496,14 @@ public class ArticleService {
         message.setTargetId(articleId);
         message.setMessageId(UUID.randomUUID().toString());
         try {
+            // M18：把当前请求的轨迹 id 挂到消息头上。业务请求通常没有轨迹
+            // （propagate() 会退化成不做任何事的处理器），但 AI 助手触发的写操作例外 ——
+            // 那种情况下审核链路会接在同一 traceId 上，管理端能看到完整因果。
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.ARTICLE_EXCHANGE,
                     RabbitMQConfig.MODERATION_ROUTING_KEY,
-                    message);
+                    message,
+                    TraceHeaders.propagate());
         } catch (RuntimeException e) {
             log.error("内容审核消息发送失败：articleId={}", articleId, e);
         }

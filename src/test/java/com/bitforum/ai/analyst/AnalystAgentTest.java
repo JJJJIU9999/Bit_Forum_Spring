@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
 
+import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.dto.AdminDashboardSummaryResponse;
 import com.bitforum.dto.DashboardArticleStats;
 import com.bitforum.dto.DashboardHotArticle;
@@ -31,6 +32,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 class AnalystAgentTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** M18：轨迹记录器在"不依赖模型"的用例里不会被真正调用，用 mock 即可。 */
+    private final TraceRecorder traceRecorder = mock(TraceRecorder.class);
 
     /** 模型不可用时：必须降级，但**统计快照仍然要有**（统计是本地算的，与 AI 无关）。 */
     @Test
@@ -39,7 +42,7 @@ class AnalystAgentTest {
         when(dashboardService.summary()).thenReturn(sampleSummary());
 
         AnalystAgent agent = new AnalystAgent(unavailableChatClient(), dashboardService,
-                objectMapper, "deepseek-flash");
+                objectMapper, "deepseek-flash", traceRecorder);
 
         AnalystAgent.InsightOutcome outcome = agent.analyze();
 
@@ -58,7 +61,7 @@ class AnalystAgentTest {
         when(dashboardService.summary()).thenThrow(new IllegalStateException("数据库连接中断"));
 
         AnalystAgent agent = new AnalystAgent(unavailableChatClient(), dashboardService,
-                objectMapper, "deepseek-flash");
+                objectMapper, "deepseek-flash", traceRecorder);
 
         AnalystAgent.InsightOutcome outcome = agent.analyze();
 
@@ -87,7 +90,7 @@ class AnalystAgentTest {
         when(dashboardService.summary()).thenReturn(sampleSummary());
 
         AnalystAgent agent = new AnalystAgent(unavailableChatClient(), dashboardService,
-                objectMapper, "deepseek-flash");
+                objectMapper, "deepseek-flash", traceRecorder);
 
         String snapshot = agent.analyze().dataSnapshot();
 

@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 
+import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.Comment;
 import com.bitforum.mapper.ArticleMapper;
@@ -50,6 +51,9 @@ class ModerationMessageListenerTest {
     private ModerationService moderationService;
     @Mock
     private Channel channel;
+    /** M18：轨迹记录器；本测试只关心 ACK/幂等分支，轨迹的写入由轨迹自身的测试覆盖。 */
+    @Mock
+    private TraceRecorder traceRecorder;
 
     @Test
     void pendingArticleShouldBeSubmittedForModeration() throws Exception {

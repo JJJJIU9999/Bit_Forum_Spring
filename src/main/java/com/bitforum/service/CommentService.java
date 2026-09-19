@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.ai.trace.TraceHeaders;
 import com.bitforum.config.RabbitMQConfig;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.Comment;
@@ -74,10 +75,12 @@ public class CommentService {
         message.setTargetId(commentId);
         message.setMessageId(UUID.randomUUID().toString());
         try {
+            // M18：与文章审核消息同样的处理：若当前线程有执行轨迹，就把 traceId 带上
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.ARTICLE_EXCHANGE,
                     RabbitMQConfig.MODERATION_ROUTING_KEY,
-                    message);
+                    message,
+                    TraceHeaders.propagate());
         } catch (RuntimeException e) {
             log.error("评论审核消息发送失败：commentId={}", commentId, e);
         }

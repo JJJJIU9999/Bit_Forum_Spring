@@ -12,6 +12,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,9 @@ import com.bitforum.ai.tool.AgentContextKeys;
 import com.bitforum.ai.tool.ArticleTools;
 import com.bitforum.ai.tool.ToolRegistry;
 import com.bitforum.ai.tool.UserInteractionTools;
+import com.bitforum.ai.trace.TraceDegradeReason;
+import com.bitforum.ai.trace.TraceRecorder;
+import com.bitforum.ai.trace.TraceStepType;
 
 /**
  * 论坛问答助手 Agent（M13；M14 接入工具调用，M15 接入 RAG 检索）。
@@ -95,15 +99,18 @@ public class QaAgent implements Agent {
     private final ArticleTools articleTools;
     private final UserInteractionTools interactionTools;
     private final RagService ragService;
+    private final TraceRecorder traceRecorder;
 
     public QaAgent(ObjectProvider<ChatClient> chatClientProvider,
                    ArticleTools articleTools,
                    UserInteractionTools interactionTools,
-                   RagService ragService) {
+                   RagService ragService,
+                   TraceRecorder traceRecorder) {
         this.chatClientProvider = chatClientProvider;
         this.articleTools = articleTools;
         this.interactionTools = interactionTools;
         this.ragService = ragService;
+        this.traceRecorder = traceRecorder;
     }
 
     @Override
@@ -117,11 +124,13 @@ public class QaAgent implements Agent {
         if (chatClient == null) {
             // AI 未启用（未配置 API Key）时不抛异常，返回降级文案，保证论坛主流程可用
             log.debug("ChatClient 不可用，QA 走降级回答");
+            traceRecorder.degrade(TraceDegradeReason.AI_DISABLED, null);
             return AgentResponse.degraded("AI 助手当前未启用（未配置 DEEPSEEK_API_KEY），请联系管理员。");
         }
 
         // M15：先检索站内知识库。检索失败不影响对话，只是退化为"无引用回答"。
-        RagService.RetrievalResult retrieval = retrieveSafely(context.userMessage());
+        long retrieveStartedAt = System.currentTimeMillis();
+        RagService.RetrievalResult retrieval = retrieveSafely(context.userMessage(), retrieveStartedAt);
 
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(SYSTEM_PROMPT));
@@ -138,7 +147,11 @@ public class QaAgent implements Agent {
         try {
             // 按 Agent 类型装配工具（M14）。工具让模型能真正查询与操作站内数据，
             // 而不是只能依赖提示词里的静态说明。
+            // M18：这里不再直接把工具对象交给 ChatClient，而是先包装成"带轨迹采集"的回调 ——
+            // T12 实测确认工具执行循环在 provider 内部完成，业务可见的最终响应里没有工具链，
+            // 唯一能记录「工具名 / 入参 / 返回值 / 单步耗时」的位置就是这层包装。
             Object[] tools = ToolRegistry.toolsFor(type(), articleTools, interactionTools);
+            ToolCallback[] toolCallbacks = traceRecorder.wrapTools(tools);
 
             // 把"当前登录用户"等应用侧已知信息通过 ToolContext 注入工具。
             // 刻意不作为工具参数暴露给模型：否则模型会向用户索要用户 id，也可能传错身份。
@@ -146,12 +159,18 @@ public class QaAgent implements Agent {
             toolContext.put(AgentContextKeys.USER_ID, context.userId());
             toolContext.put(AgentContextKeys.CONVERSATION_ID, context.conversationId());
 
-            ChatResponse response = chatClient.prompt()
+            ChatClient.ChatClientRequestSpec requestSpec = chatClient.prompt()
                     .messages(messages)
-                    .tools(tools)
-                    .toolContext(toolContext)
-                    .call()
-                    .chatResponse();
+                    .toolContext(toolContext);
+            if (toolCallbacks.length > 0) {
+                requestSpec = requestSpec.toolCallbacks(toolCallbacks);
+            }
+
+            long llmStartedAt = System.currentTimeMillis();
+            ChatResponse response = requestSpec.call().chatResponse();
+            traceRecorder.stepSince(TraceStepType.LLM_CALL, modelName(response),
+                    "prompt=" + promptTokens(response) + ", completion=" + completionTokens(response),
+                    llmStartedAt, totalTokens(response));
 
             String content = response == null || response.getResult() == null
                     || response.getResult().getOutput() == null
@@ -160,6 +179,7 @@ public class QaAgent implements Agent {
 
             if (content == null || content.isBlank()) {
                 log.warn("模型返回空内容，conversationId={}", context.conversationId());
+                traceRecorder.degrade(TraceDegradeReason.EMPTY_RESPONSE, null);
                 return AgentResponse.degraded("AI 暂时没有生成有效回答，请稍后重试或换一种问法。");
             }
 
@@ -169,16 +189,23 @@ public class QaAgent implements Agent {
         } catch (RuntimeException e) {
             // 大模型不可用（网络、额度、限流）不应影响论坛其他功能
             log.error("调用大模型失败，conversationId={}", context.conversationId(), e);
+            traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, null);
             return AgentResponse.degraded("AI 服务暂时不可用，请稍后重试。");
         }
     }
 
     /** 检索失败时退化为空结果，让对话继续走无检索路径。 */
-    private RagService.RetrievalResult retrieveSafely(String query) {
+    private RagService.RetrievalResult retrieveSafely(String query, long startedAt) {
         try {
-            return ragService.retrieve(query);
+            RagService.RetrievalResult result = ragService.retrieve(query);
+            traceRecorder.stepSince(TraceStepType.RETRIEVE, "知识库检索",
+                    "命中 " + result.chunks().size() + " 个片段", startedAt, null);
+            return result;
         } catch (RuntimeException exception) {
             log.warn("知识库检索失败，本轮降级为无检索回答", exception);
+            // 检索失败只是"没有引用"，回答本身仍然可用 —— 但这仍是一种降级，
+            // 必须让用户/管理员能看到原因（M18 验收第 3 条）
+            traceRecorder.degrade(TraceDegradeReason.RETRIEVE_FAILED, null);
             return new RagService.RetrievalResult(List.of(), List.of(), 0);
         }
     }
@@ -199,20 +226,27 @@ public class QaAgent implements Agent {
     }
 
     private Integer promptTokens(ChatResponse response) {
-        return response.getMetadata() == null || response.getMetadata().getUsage() == null
+        return response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null
                 ? null
                 : response.getMetadata().getUsage().getPromptTokens();
     }
 
     private Integer completionTokens(ChatResponse response) {
-        return response.getMetadata() == null || response.getMetadata().getUsage() == null
+        return response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null
                 ? null
                 : response.getMetadata().getUsage().getCompletionTokens();
     }
 
     private Integer totalTokens(ChatResponse response) {
-        return response.getMetadata() == null || response.getMetadata().getUsage() == null
+        return response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null
                 ? null
                 : response.getMetadata().getUsage().getTotalTokens();
+    }
+
+    /** 实际响应的模型标识（轨迹里记录用）；模型未返回时回退为 "unknown"。 */
+    private String modelName(ChatResponse response) {
+        String model = response == null || response.getMetadata() == null
+                ? null : response.getMetadata().getModel();
+        return model == null || model.isBlank() ? "unknown" : model;
     }
 }

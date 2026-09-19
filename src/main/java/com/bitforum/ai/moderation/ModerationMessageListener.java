@@ -9,6 +9,12 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.bitforum.ai.agent.AgentType;
+import com.bitforum.ai.entity.AiExecutionTrace;
+import com.bitforum.ai.trace.TraceDegradeReason;
+import com.bitforum.ai.trace.TraceHeaders;
+import com.bitforum.ai.trace.TraceRecorder;
+import com.bitforum.ai.trace.TraceStepType;
 import com.bitforum.config.RabbitMQConfig;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.Comment;
@@ -47,74 +53,114 @@ public class ModerationMessageListener {
     private CommentMapper commentMapper;
     @Autowired
     private ModerationService moderationService;
+    @Autowired
+    private TraceRecorder traceRecorder;
 
     @RabbitListener(queues = RabbitMQConfig.MODERATION_QUEUE)
     public void handleModeration(ModerationMessage message, Channel channel, Message rawMessage) throws IOException {
         long deliveryTag = rawMessage.getMessageProperties().getDeliveryTag();
 
+        // M18：把这次消费挂到上游留下的轨迹上（消息头里的 traceId），没有就新建一条。
+        // 这样"提交内容 → MQ → AI 审核"在管理端是一条完整链路，
+        // 而不是一段看不出前因后果的孤立记录（T13 实测 header 透传可用，且不影响消息体）
+        traceRecorder.attachOrStart(TraceHeaders.readTraceId(rawMessage),
+                AiExecutionTrace.SCENE_MODERATION, AgentType.MODERATION.name(), null, null,
+                refTypeOf(message), message == null ? null : message.getTargetId());
+
         try {
             if (redisService.isMessageProcessed(message.getMessageId())) {
                 log.info("审核消息已处理过，跳过重复消费：messageId={}", message.getMessageId());
+                traceRecorder.step(TraceStepType.ASYNC, "重复消费",
+                        "messageId=" + message.getMessageId() + " 已处理过，本次直接跳过");
+                traceRecorder.finish(null, null, null, null);
                 channel.basicAck(deliveryTag, false);
                 return;
             }
 
-            boolean analyzed = analyze(message);
+            traceRecorder.step(TraceStepType.ASYNC, "消费审核消息",
+                    "messageId=" + message.getMessageId() + "，targetType=" + message.getTargetType()
+                            + "，targetId=" + message.getTargetId());
+
+            ModerationService.ModerationResult result = analyze(message);
+            if (result != null && result.degraded()) {
+                // 审核降级：内容仍按正常人工流程处理，但必须让管理端看出"这次没有 AI 判断"
+                traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, result.errorMessage());
+            }
             redisService.markMessageProcessed(message.getMessageId());
             channel.basicAck(deliveryTag, false);
 
-            if (!analyzed) {
+            if (result == null) {
                 log.info("审核消息已消费但不产生分析结果：messageId={}, type={}, targetId={}",
                         message.getMessageId(), message.getTargetType(), message.getTargetId());
+                traceRecorder.step(TraceStepType.PERSIST, "未产生审核结果",
+                        "对象不存在或状态不匹配，本次不做 AI 审核（人工流程兜底）");
+            } else {
+                traceRecorder.step(TraceStepType.PERSIST, "审核结果已落库",
+                        "decision=" + result.decision() + "，action=" + result.action()
+                                + "，recordId=" + result.recordId());
             }
+            traceRecorder.finish(null, null, null, null);
         } catch (Exception e) {
             log.error("审核消息处理失败：messageId={}, type={}, targetId={}",
                     message == null ? null : message.getMessageId(),
                     message == null ? null : message.getTargetType(),
                     message == null ? null : message.getTargetId(),
                     e);
+            traceRecorder.finishFailed(e.getMessage());
             // requeue=false：立即进入死信队列，避免坏消息反复重投堵塞队列
             channel.basicNack(deliveryTag, false, false);
         }
     }
 
+    /** 轨迹里的业务引用类型：审核对象是文章还是评论。 */
+    private String refTypeOf(ModerationMessage message) {
+        if (message == null) {
+            return null;
+        }
+        if (ModerationMessage.TARGET_ARTICLE.equals(message.getTargetType())) {
+            return AiExecutionTrace.REF_ARTICLE;
+        }
+        if (ModerationMessage.TARGET_COMMENT.equals(message.getTargetType())) {
+            return AiExecutionTrace.REF_COMMENT;
+        }
+        return null;
+    }
+
     /**
      * 按对象类型回查内容并送审。
      *
-     * @return 是否真正执行了分析（对象不存在或状态不匹配时返回 false）
+     * @return 审核结果；对象不存在或状态不匹配时返回 null（表示本次没有执行分析）
      */
-    private boolean analyze(ModerationMessage message) {
+    private ModerationService.ModerationResult analyze(ModerationMessage message) {
         if (ModerationMessage.TARGET_ARTICLE.equals(message.getTargetType())) {
             Article article = articleMapper.selectById(message.getTargetId());
             if (article == null) {
                 log.info("待审核文章不存在，跳过：articleId={}", message.getTargetId());
-                return false;
+                return null;
             }
             if (!ArticleService.STATUS_PENDING.equals(article.getStatus())) {
                 log.info("文章已不在待审核状态，跳过 AI 审核：articleId={}, status={}",
                         article.getId(), article.getStatus());
-                return false;
+                return null;
             }
             // 标题同样参与审核：标题党的风险往往比正文更明显
             String content = article.getTitle() + "\n" + article.getContent();
-            moderationService.moderate(
+            return moderationService.moderate(
                     ModerationTargetType.ARTICLE, article.getId(), content, article.getUserId());
-            return true;
         }
 
         if (ModerationMessage.TARGET_COMMENT.equals(message.getTargetType())) {
             Comment comment = commentMapper.selectById(message.getTargetId());
             if (comment == null) {
                 log.info("待审核评论不存在（可能已删除），跳过：commentId={}", message.getTargetId());
-                return false;
+                return null;
             }
-            moderationService.moderate(
+            return moderationService.moderate(
                     ModerationTargetType.COMMENT, comment.getId(), comment.getContent(), comment.getUserId());
-            return true;
         }
 
         log.warn("未知的审核对象类型，跳过：type={}", message.getTargetType());
-        return false;
+        return null;
     }
 
     /** 死信队列只做记录：漏掉的审核不影响内容发布，人工审核流程仍然兜底。 */

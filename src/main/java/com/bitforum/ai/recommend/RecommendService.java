@@ -16,11 +16,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.bitforum.ai.agent.AgentType;
+import com.bitforum.ai.entity.AiExecutionTrace;
 import com.bitforum.ai.entity.AiRecommendLog;
 import com.bitforum.ai.mapper.AiRecommendLogMapper;
 import com.bitforum.ai.recommend.RecommendFusionService.RecommendCandidate;
 import com.bitforum.ai.recommend.RecommendRecallService.RecallRequest;
 import com.bitforum.ai.recommend.RecommendRecallService.RecalledArticle;
+import com.bitforum.ai.trace.TraceDegradeReason;
+import com.bitforum.ai.trace.TraceRecorder;
+import com.bitforum.ai.trace.TraceStepType;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleFavorite;
 import com.bitforum.entity.Category;
@@ -133,6 +138,7 @@ public class RecommendService {
     private final boolean excludeOwn;
     private final boolean excludeFavorited;
     private final boolean reasonEnabled;
+    private final TraceRecorder traceRecorder;
 
     public RecommendService(RecommendRecallService recallService,
                             RecommendFusionService fusionService,
@@ -145,7 +151,8 @@ public class RecommendService {
                             @Value("${bitforum.ai.recommend.recall-top-k:20}") int recallTopK,
                             @Value("${bitforum.ai.recommend.exclude-own:true}") boolean excludeOwn,
                             @Value("${bitforum.ai.recommend.exclude-favorited:true}") boolean excludeFavorited,
-                            @Value("${bitforum.ai.recommend.reason-enabled:true}") boolean reasonEnabled) {
+                            @Value("${bitforum.ai.recommend.reason-enabled:true}") boolean reasonEnabled,
+                            TraceRecorder traceRecorder) {
         this.recallService = recallService;
         this.fusionService = fusionService;
         this.reasonAgent = reasonAgent;
@@ -158,6 +165,7 @@ public class RecommendService {
         this.excludeOwn = excludeOwn;
         this.excludeFavorited = excludeFavorited;
         this.reasonEnabled = reasonEnabled;
+        this.traceRecorder = traceRecorder;
     }
 
     /**
@@ -200,6 +208,16 @@ public class RecommendService {
         long startedAt = System.currentTimeMillis();
         int topN = Math.max(1, request.topN());
 
+        // M18：推荐链路也留下执行轨迹 —— 排序虽然完全由 Java 完成（M17 决定），
+        // 但"为什么是这 10 篇"恰恰是最需要被解释的部分。
+        // 只在"会调用模型写理由"时才开轨迹：离线评测（reason-enabled=false）会产生
+        // 成千上万次推荐，那些记录没有解释价值，只会把轨迹表灌满噪音。
+        if (reasonEnabled) {
+            traceRecorder.start(AiExecutionTrace.SCENE_RECOMMEND, AgentType.RECOMMEND.name(),
+                    request.userId(), null, AiExecutionTrace.REF_SOURCE_ARTICLE,
+                    request.sourceArticleId());
+        }
+
         Set<Long> excluded = exclusionOverride != null
                 ? exclusionOverride
                 : buildExclusionSet(request.userId());
@@ -230,6 +248,10 @@ public class RecommendService {
                     .toList();
         }
         List<RecommendCandidate> fused = fusionService.fuse(recalled, excluded, topN);
+        traceRecorder.step(TraceStepType.RECALL, "三路召回",
+                "向量/热度/关注共召回 " + recalled.size() + " 条候选（去重前）");
+        traceRecorder.step(TraceStepType.FUSION, "RRF 融合与截断",
+                "融合后取 Top-" + topN + "，实际 " + fused.size() + " 条");
 
         return assemble(request, fused, recalled.size(), request.experimentTag(), startedAt);
     }
@@ -353,11 +375,22 @@ public class RecommendService {
         // 失败时列表照常返回，只是没有理由 —— 这条降级路径是生产环境的必需能力。
         RecommendReasonAgent.ReasonOutcome reasonOutcome = generateReasons(request, result, hasQuery);
         List<RecommendedArticle> withReasons = applyReasons(result, reasonOutcome);
+        traceRecorder.step(TraceStepType.LLM_CALL, reasonOutcome.model(),
+                "为 " + reasonOutcome.reasonsByArticleId().size() + " 条推荐生成理由",
+                reasonOutcome.latencyMillis(), null);
+        if (reasonOutcome.degraded()) {
+            // 排序结果仍然可用（Java 定序），降级的只是"解释"这一层 ——
+            // 这正是 M17 定下的设计，轨迹要把这一点如实记下来
+            traceRecorder.degrade(TraceDegradeReason.LLM_ERROR, reasonOutcome.errorMessage());
+        }
 
         long latency = System.currentTimeMillis() - startedAt;
         boolean degraded = reasonOutcome.degraded();
 
         saveRecommendLog(request, withReasons, degraded, (int) latency, experimentTag);
+        traceRecorder.step(TraceStepType.PERSIST, "推荐记录落库",
+                "已写入 ai_recommend_log " + withReasons.size() + " 行（批次=" + experimentTag + "）");
+        traceRecorder.finish(modelName, null, null, null);
 
         log.info(">>> 推荐完成：scene={}，userId={}，来源文章={}，返回 {} 条（召回 {} 条），"
                         + "理由 {}/{} 条，批次={}，耗时 {} ms",

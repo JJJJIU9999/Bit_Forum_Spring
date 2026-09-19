@@ -17,9 +17,12 @@ import com.bitforum.ai.agent.AgentResponse;
 import com.bitforum.ai.agent.AgentType;
 import com.bitforum.ai.dto.AiMessageResponse;
 import com.bitforum.ai.entity.AiConversation;
+import com.bitforum.ai.entity.AiExecutionTrace;
 import com.bitforum.ai.memory.MysqlChatMemoryRepository;
 import com.bitforum.ai.rag.Citation;
 import com.bitforum.ai.service.AiConversationService;
+import com.bitforum.ai.trace.TraceRecorder;
+import com.bitforum.ai.trace.TraceStepType;
 
 /**
  * Agent 编排器（M13）。
@@ -36,12 +39,15 @@ public class AgentOrchestrator {
     private final Map<AgentType, Agent> agentsByType;
     private final AiConversationService conversationService;
     private final MysqlChatMemoryRepository chatMemoryRepository;
+    private final TraceRecorder traceRecorder;
 
     public AgentOrchestrator(List<Agent> agents,
                              AiConversationService conversationService,
-                             MysqlChatMemoryRepository chatMemoryRepository) {
+                             MysqlChatMemoryRepository chatMemoryRepository,
+                             TraceRecorder traceRecorder) {
         this.conversationService = conversationService;
         this.chatMemoryRepository = chatMemoryRepository;
+        this.traceRecorder = traceRecorder;
         // 过滤掉 type() 返回 null 的实现：null 作为 map key 会让该 Agent 永久无法被路由，
         // 且不会有任何报错，属于静默失效。这里显式跳过并记录警告，便于尽早发现实现错误。
         Map<AgentType, Agent> registry = new EnumMap<>(AgentType.class);
@@ -89,20 +95,37 @@ public class AgentOrchestrator {
         String currentInput = extractAndRemoveLastUserMessage(history, userMessage);
 
         // 6. 路由到对应 Agent 执行
+        //    M18：从"路由"这一步开始记录执行轨迹。QaAgent 内部的检索、模型调用与工具调用
+        //    会挂到同一条轨迹上（ThreadLocal 传递），收尾时一次性落库。
         AgentType agentType = AgentType.fromName(conversation.getAgentType());
         Agent agent = agentsByType.get(agentType);
+        traceRecorder.start(AiExecutionTrace.SCENE_CHAT, agentType.name(), userId, conversationId,
+                AiExecutionTrace.REF_CONVERSATION, conversationId);
         if (agent == null) {
             log.warn("未找到 Agent 实现：type={}，回退到 QA", agentType);
+            traceRecorder.step(TraceStepType.ROUTE, agentType.name(),
+                    "未找到该 Agent 的实现，已回退到问答助手");
             agent = agentsByType.get(AgentType.QA);
+        } else {
+            traceRecorder.step(TraceStepType.ROUTE, agentType.name(),
+                    "按会话 agent_type 路由到「" + agentType.getDisplayName() + "」");
         }
         if (agent == null) {
             // 理论上不会发生（QaAgent 始终注册）；防御性处理，避免 NPE
+            traceRecorder.finishFailed("没有任何可用的 Agent 实现");
             throw new IllegalStateException("没有任何可用的 Agent 实现");
         }
 
         long startedAt = System.currentTimeMillis();
-        AgentResponse response = agent.execute(
-                new AgentContext(userId, conversationId, currentInput), history);
+        AgentResponse response;
+        try {
+            response = agent.execute(new AgentContext(userId, conversationId, currentInput), history);
+        } catch (RuntimeException exception) {
+            // Agent 内部已尽量降级，走到这里说明是兜底失败。轨迹必须离开 RUNNING 状态，
+            // 否则管理端会一直显示"进行中"，看不出这次调用其实失败了
+            traceRecorder.finishFailed(exception.getMessage());
+            throw exception;
+        }
         int latencyMs = (int) (System.currentTimeMillis() - startedAt);
 
         // 7. 保存助手回复并更新会话统计。
@@ -116,6 +139,12 @@ public class AgentOrchestrator {
         }
         conversationService.updateConversationStats(conversationId, 2,
                 response.totalTokens() == null ? 0 : response.totalTokens());
+        traceRecorder.step(TraceStepType.PERSIST, "会话落库",
+                "助手回复已保存（messageId=" + saved.getId() + "），会话累计 token 已更新");
+
+        // 收尾：状态由链路中是否标记过降级决定（M18 统一的降级表现）
+        traceRecorder.finish(null, response.promptTokens(), response.completionTokens(),
+                response.totalTokens());
 
         AiMessageResponse result = new AiMessageResponse();
         result.setId(saved.getId());
