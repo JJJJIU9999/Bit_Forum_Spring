@@ -176,6 +176,25 @@ bitforum:
       #    修改配置只影响此后写入的 ai_usage_stat 行，历史行保留当时的估算。
       input-price-per-million: ${BITFORUM_AI_INPUT_PRICE:2.0}
       output-price-per-million: ${BITFORUM_AI_OUTPUT_PRICE:8.0}
+    budget:
+      # ===== M18 收尾：用量预算闸门（克制版）=====
+      # 只做三件事：单用户每日预算、超预算统一降级、单次请求的输入/输出保护。
+      # **不做**：套餐/充值/余额、会员等级、分布式配额中心、动态配置后台。
+      #
+      # 数据来源是 ai_usage_stat 的"该用户 + 今天"，不新增表、不新增迁移；
+      # 判定是 soft limit：本次调用的 token 要等调用结束才落库，因此可能略微超出上限。
+      #
+      # 生效范围只有"用户主动消耗额度"的两条链路（AI 助手对话、推荐理由生成）；
+      # 内容审核（MQ）与运营洞察（管理员触发）不设闸门 —— 否则作者超额会导致内容不被审核。
+      enabled: ${BITFORUM_AI_BUDGET_ENABLED:true}
+      # 单用户每日 token 上限；<= 0 表示不限制
+      daily-token-limit: ${BITFORUM_AI_DAILY_TOKEN_LIMIT:200000}
+      # 单用户每日费用上限（元，按上面的单价估算）；<= 0 表示不限制
+      daily-cost-limit: ${BITFORUM_AI_DAILY_COST_LIMIT:2.0}
+      # 单次提问的输入长度上限（字符）；<= 0 表示不限制
+      max-input-chars: ${BITFORUM_AI_MAX_INPUT_CHARS:4000}
+      # 单次回答的输出上限（token，对话链路生效）；<= 0 表示不限制
+      max-output-tokens: ${BITFORUM_AI_MAX_OUTPUT_TOKENS:1024}
 
 management:
   endpoints:

@@ -26,6 +26,7 @@ import com.bitforum.ai.recommend.RecommendRecallService.RecalledArticle;
 import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.ai.trace.TraceStepType;
+import com.bitforum.ai.usage.AiTokenBudgetGuard;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleFavorite;
 import com.bitforum.entity.Category;
@@ -139,6 +140,7 @@ public class RecommendService {
     private final boolean excludeFavorited;
     private final boolean reasonEnabled;
     private final TraceRecorder traceRecorder;
+    private final AiTokenBudgetGuard budgetGuard;
 
     public RecommendService(RecommendRecallService recallService,
                             RecommendFusionService fusionService,
@@ -152,7 +154,8 @@ public class RecommendService {
                             @Value("${bitforum.ai.recommend.exclude-own:true}") boolean excludeOwn,
                             @Value("${bitforum.ai.recommend.exclude-favorited:true}") boolean excludeFavorited,
                             @Value("${bitforum.ai.recommend.reason-enabled:true}") boolean reasonEnabled,
-                            TraceRecorder traceRecorder) {
+                            TraceRecorder traceRecorder,
+                            AiTokenBudgetGuard budgetGuard) {
         this.recallService = recallService;
         this.fusionService = fusionService;
         this.reasonAgent = reasonAgent;
@@ -166,6 +169,7 @@ public class RecommendService {
         this.excludeFavorited = excludeFavorited;
         this.reasonEnabled = reasonEnabled;
         this.traceRecorder = traceRecorder;
+        this.budgetGuard = budgetGuard;
     }
 
     /**
@@ -414,6 +418,17 @@ public class RecommendService {
             return RecommendReasonAgent.ReasonOutcome.degraded(
                     TraceDegradeReason.AI_DISABLED, modelName, 0L,
                     "推荐理由生成已关闭（bitforum.ai.recommend.reason-enabled=false）");
+        }
+
+        // M18 收尾：单用户每日预算闸门。
+        // 推荐是"详情页每次浏览都可能触发一次模型调用"的场景，最容易被无感知地刷；
+        // 超预算时退化为**无理由推荐** —— 排序由 Java 完成，列表完全不受影响，
+        // 这正是 M17 就设计好的那条降级路径，不需要为预算再造一条。
+        AiTokenBudgetGuard.BudgetDecision decision = budgetGuard.check(request.userId());
+        if (!decision.allowed()) {
+            traceRecorder.degrade(decision.reason(), decision.detail());
+            return RecommendReasonAgent.ReasonOutcome.degraded(decision.reason(), modelName, 0L,
+                    decision.message());
         }
         return reasonAgent.generate(articles, describeUser(request.userId()), queryBased);
     }

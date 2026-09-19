@@ -12,8 +12,10 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.bitforum.ai.degrade.AiDegradeGuard;
@@ -102,19 +104,26 @@ public class QaAgent implements Agent {
     private final RagService ragService;
     private final TraceRecorder traceRecorder;
     private final AiDegradeGuard degradeGuard;
+    /**
+     * 单次回答的输出上限（M18 收尾的"单次请求保护"）。
+     * 0 或负数表示不限制；默认 1024 token 足够回答站内问题，也能挡住"让模型写一万字"式的消耗。
+     */
+    private final int maxOutputTokens;
 
     public QaAgent(ObjectProvider<ChatClient> chatClientProvider,
                    ArticleTools articleTools,
                    UserInteractionTools interactionTools,
                    RagService ragService,
                    TraceRecorder traceRecorder,
-                   AiDegradeGuard degradeGuard) {
+                   AiDegradeGuard degradeGuard,
+                   @Value("${bitforum.ai.budget.max-output-tokens:1024}") int maxOutputTokens) {
         this.chatClientProvider = chatClientProvider;
         this.articleTools = articleTools;
         this.interactionTools = interactionTools;
         this.ragService = ragService;
         this.traceRecorder = traceRecorder;
         this.degradeGuard = degradeGuard;
+        this.maxOutputTokens = maxOutputTokens;
     }
 
     @Override
@@ -166,6 +175,12 @@ public class QaAgent implements Agent {
             ChatClient.ChatClientRequestSpec requestSpec = chatClient.prompt()
                     .messages(messages)
                     .toolContext(toolContext);
+            if (maxOutputTokens > 0) {
+                // M18 收尾：给对话设一个输出上限。它与"每日预算"互补 ——
+                // 预算是事后按天兜底，这里是事前挡住单次请求的极端输出。
+                requestSpec = requestSpec.options(
+                        ChatOptions.builder().maxTokens(maxOutputTokens).build());
+            }
             if (toolCallbacks.length > 0) {
                 requestSpec = requestSpec.toolCallbacks(toolCallbacks);
             }

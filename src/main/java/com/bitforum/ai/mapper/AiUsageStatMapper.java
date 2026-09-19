@@ -72,4 +72,18 @@ public interface AiUsageStatMapper extends BaseMapper<AiUsageStat> {
             ORDER BY SUM(total_tokens) DESC
             LIMIT #{limit}""")
     List<AiUsageDtos.UserItem> selectTopUsers(@Param("from") LocalDate from, @Param("limit") int limit);
+
+    /**
+     * 某个用户**某一天**的合计用量（M18 预算闸门用）。
+     *
+     * <p>走 `idx_aius_user_date` 索引，是"每次 AI 调用前问一句今天用了多少"这种高频只读查询，
+     * 因此刻意不做缓存：缓存会引入"刚花的额度看不到"的窗口，而这条查询本身很轻。
+     */
+    @Select("""
+            SELECT COALESCE(SUM(total_tokens), 0) AS totalTokens,
+                   COALESCE(SUM(estimated_cost), 0) AS cost
+            FROM ai_usage_stat
+            WHERE user_id = #{userId} AND stat_date = #{statDate}""")
+    AiUsageDtos.UserUsage selectUserDaily(@Param("userId") Long userId,
+                                          @Param("statDate") LocalDate statDate);
 }

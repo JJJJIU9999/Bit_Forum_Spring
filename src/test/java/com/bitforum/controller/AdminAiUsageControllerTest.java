@@ -94,7 +94,11 @@ class AdminAiUsageControllerTest {
                 // 计价口径随响应返回：页面上的成本是估算值，单价必须可见
                 .andExpect(jsonPath("$.data.inputPricePerMillion").exists())
                 .andExpect(jsonPath("$.data.outputPricePerMillion").exists())
-                .andExpect(jsonPath("$.data.priceNote").isNotEmpty());
+                .andExpect(jsonPath("$.data.priceNote").isNotEmpty())
+                // M18 收尾：预算口径也要可见，管理端才能解释"某个用户为什么被限流"
+                .andExpect(jsonPath("$.data.budget.enabled").value(true))
+                .andExpect(jsonPath("$.data.budget.dailyTokenLimit").exists())
+                .andExpect(jsonPath("$.data.budget.maxInputChars").exists());
 
         // 聚合内容：不对"库里有几行"做强断言（同一天可能有其它测试/演示数据），
         // 改为断言本次插入的两行确实被聚合进来了

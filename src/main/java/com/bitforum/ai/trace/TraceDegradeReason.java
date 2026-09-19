@@ -28,8 +28,10 @@ public final class TraceDegradeReason {
     public static final String DATA_UNAVAILABLE = "DATA_UNAVAILABLE";
     /** 没有可用的输入（例如推荐列表为空，不需要生成理由） */
     public static final String NOTHING_TO_DO = "NOTHING_TO_DO";
-    /** 超出 token 预算（TokenBudgetGuard，M18 时间充足才做） */
+    /** 超出 token 预算（TokenBudgetGuard，M18 收尾） */
     public static final String BUDGET_EXCEEDED = "BUDGET_EXCEEDED";
+    /** 单次输入超过长度上限（TokenBudgetGuard 的输入保护） */
+    public static final String INPUT_TOO_LONG = "INPUT_TOO_LONG";
 
     private TraceDegradeReason() {
     }
@@ -49,6 +51,7 @@ public final class TraceDegradeReason {
             case DATA_UNAVAILABLE -> "站内数据暂时不可用，本次结果不完整。";
             case NOTHING_TO_DO -> "当前没有需要 AI 处理的内容。";
             case BUDGET_EXCEEDED -> "已达到今日 AI 使用额度，请稍后再试。";
+            case INPUT_TOO_LONG -> "这次提问太长了，请精简后重试（或拆成几次提问）。";
             default -> "AI 服务暂时不可用，已使用降级结果。";
         };
     }

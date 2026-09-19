@@ -30,6 +30,7 @@ import com.bitforum.ai.dto.AiConversationResponse;
 import com.bitforum.ai.dto.AiMessageResponse;
 import com.bitforum.ai.entity.AiConversation;
 import com.bitforum.ai.entity.AiExecutionTrace;
+import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.ai.mapper.AiConversationMapper;
 import com.bitforum.ai.service.AiConversationService;
 
@@ -114,6 +115,8 @@ class AgentOrchestratorTest {
     private TestRoutingAgent testRoutingAgent;
     @Autowired
     private com.bitforum.ai.mapper.AiExecutionTraceMapper traceMapper;
+    @Autowired
+    private com.bitforum.ai.mapper.AiUsageStatMapper usageMapper;
 
     /** 真实 QaAgent 保留在容器里用于验证路由注册；它不会被本测试调用。 */
     @MockitoBean
@@ -277,7 +280,62 @@ class AgentOrchestratorTest {
                 "未调用 degrade(...) 时不应自动推断为降级");
     }
 
+    /**
+     * M18 收尾：当日用量达到上限后，对话必须在**调用模型之前**被拦下。
+     *
+     * <p>断言的落点刻意是"测试 Agent 没有被调用" —— 只断言返回文案的话，
+     * 埋点写错位置（先调用再判断）也会通过，而那时费用已经花掉了。
+     */
+    @Test
+    void shouldDegradeWithoutCallingAgentWhenDailyBudgetExceeded() {
+        Long conversationId = createConversation(83010L, AgentType.RECOMMEND);
+        insertTodayUsage(83010L, 200_000);
+
+        AiMessageResponse answer = orchestrator.chat(conversationId, 83010L, "预算超限测试");
+
+        assertEquals(TraceDegradeReason.userMessage(TraceDegradeReason.BUDGET_EXCEEDED), answer.getContent());
+        assertEquals(0, testRoutingAgent.callCount(), "超预算时不应再调用 Agent（否则费用已经产生）");
+
+        List<AiExecutionTrace> traces = traceMapper.selectList(
+                new LambdaQueryWrapper<AiExecutionTrace>()
+                        .eq(AiExecutionTrace::getScene, AiExecutionTrace.SCENE_CHAT)
+                        .eq(AiExecutionTrace::getConversationId, conversationId));
+        assertEquals(1, traces.size());
+        assertEquals(AiExecutionTrace.STATUS_DEGRADED, traces.get(0).getStatus());
+        assertEquals(TraceDegradeReason.BUDGET_EXCEEDED, traces.get(0).getDegradeReason(),
+                "轨迹要能回答「为什么这次没有 AI 结果」");
+
+        // 降级回答同样要落库，否则用户刷新后看不到自己问过什么
+        assertEquals(2, conversationService.listMessages(conversationId, 83010L).size());
+    }
+
+    /** 单次输入保护：超长提问在调用模型之前被拒。 */
+    @Test
+    void shouldDegradeWhenInputTooLong() {
+        Long conversationId = createConversation(83011L, AgentType.RECOMMEND);
+
+        AiMessageResponse answer = orchestrator.chat(conversationId, 83011L, "字".repeat(4001));
+
+        assertEquals(TraceDegradeReason.userMessage(TraceDegradeReason.INPUT_TOO_LONG), answer.getContent());
+        assertEquals(0, testRoutingAgent.callCount(), "超长输入不应触发模型调用");
+    }
+
     // ==================== 辅助方法 ====================
+    /** 造一条"今天该用户已经用了多少 token"的用量明细（预算闸门据此判定）。 */
+    private void insertTodayUsage(Long userId, int tokens) {
+        com.bitforum.ai.entity.AiUsageStat stat = new com.bitforum.ai.entity.AiUsageStat();
+        stat.setScene(AiExecutionTrace.SCENE_CHAT);
+        stat.setAgentType(AgentType.QA.name());
+        stat.setUserId(userId);
+        stat.setPromptTokens(tokens);
+        stat.setCompletionTokens(0);
+        stat.setTotalTokens(tokens);
+        stat.setResult(com.bitforum.ai.entity.AiUsageStat.RESULT_SUCCESS);
+        stat.setEstimatedCost(new java.math.BigDecimal("0.01"));
+        stat.setStatDate(java.time.LocalDate.now());
+        usageMapper.insert(stat);
+    }
+
     /**
      * 创建会话并把 agentType 改成指定类型。
      * 走 Service 创建再更新，而不是直接 insert，目的是同时覆盖 Service 的默认值逻辑。

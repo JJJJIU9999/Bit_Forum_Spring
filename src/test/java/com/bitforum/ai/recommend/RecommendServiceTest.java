@@ -33,8 +33,10 @@ import com.bitforum.ai.recommend.RecommendRecallService.RecalledArticle;
 import com.bitforum.ai.recommend.RecommendService.RecommendRequest;
 import com.bitforum.ai.recommend.RecommendService.RecommendResult;
 import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
+import com.bitforum.ai.mapper.AiUsageStatMapper;
 import com.bitforum.ai.trace.TraceDegradeReason;
 import com.bitforum.ai.trace.TraceRecorder;
+import com.bitforum.ai.usage.AiTokenBudgetGuard;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleFavorite;
 import com.bitforum.entity.Category;
@@ -91,9 +93,11 @@ class RecommendServiceTest {
         favoriteMapper = mock(ArticleFavoriteMapper.class);
         categoryMapper = mock(CategoryMapper.class);
         logMapper = mock(AiRecommendLogMapper.class);
+        // M18 收尾：预算闸门用真实实现 + mock 的用量查询（无当日记录 → 放行），
+        // 既有用例不需要为预算写额外打桩
         service = new RecommendService(recallService, fusionService, reasonAgent, articleMapper,
                 favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true, true,
-                mock(TraceRecorder.class));
+                mock(TraceRecorder.class), allowAllBudget());
     }
 
     /** 候选为空：返回空列表 + 降级标记，不抛异常、不写记录。 */
@@ -252,12 +256,48 @@ class RecommendServiceTest {
         assertFalse(captor.getValue().getDegraded(), "理由落库后 degraded 应为 false");
     }
 
+    /** M18 收尾：预算闸门 —— 真实实现 + mock 用量查询（查不到当日用量即放行）。 */
+    private AiTokenBudgetGuard allowAllBudget() {
+        return new AiTokenBudgetGuard(mock(AiUsageStatMapper.class), true,
+                200000L, new java.math.BigDecimal("2.0"), 4000, 1024);
+    }
+
+    /** M18 收尾：当日用量超预算时跳过理由生成，但**列表与排序完全不受影响**。 */
+    @Test
+    void shouldSkipReasonGenerationWhenDailyBudgetExceeded() {
+        AiUsageStatMapper mapper = mock(AiUsageStatMapper.class);
+        com.bitforum.ai.dto.AiUsageDtos.UserUsage usage = new com.bitforum.ai.dto.AiUsageDtos.UserUsage();
+        usage.setTotalTokens(999_999L);
+        usage.setCost(new java.math.BigDecimal("0.01"));
+        when(mapper.selectUserDaily(any(), any())).thenReturn(usage);
+        AiTokenBudgetGuard exhausted = new AiTokenBudgetGuard(mapper, true, 1000L,
+                new java.math.BigDecimal("2.0"), 4000, 1024);
+
+        RecommendService budgeted = new RecommendService(recallService, fusionService, reasonAgent,
+                articleMapper, favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true,
+                true, mock(TraceRecorder.class), exhausted);
+        when(recallService.recall(any())).thenReturn(List.of(
+                new RecalledArticle(85L, RecallSource.VECTOR, 1, 0.77)));
+        when(fusionService.fuse(any(), any(), anyInt())).thenReturn(List.of(
+                new RecommendCandidate(85L, 0.0164, List.of("vector"), "{\"vector\":1}", 1)));
+        when(articleMapper.selectList(any())).thenReturn(List.of(
+                article(85L, "Spring Boot 论坛项目实践", 16L)));
+        when(categoryMapper.selectList(any())).thenReturn(List.of(category(16L, "技术")));
+
+        RecommendResult result = budgeted.recommend(RecommendRequest.forArticleDetail(13L, 87L, 5));
+
+        assertEquals(1, result.articles().size(), "超预算只影响理由，不影响推荐列表");
+        assertTrue(result.degraded(), "无理由时应标记为降级");
+        assertNull(result.articles().get(0).reason());
+        verify(reasonAgent, never()).generate(any(), any(), anyBoolean());
+    }
+
     /** 关闭理由生成时不应调用模型（离线评测依赖这个开关，避免白烧额度）。 */
     @Test
     void shouldSkipReasonGenerationWhenDisabled() {
         RecommendService withoutReason = new RecommendService(recallService, fusionService, reasonAgent,
                 articleMapper, favoriteMapper, categoryMapper, logMapper, "deepseek-flash", 20, true, true,
-                false, mock(TraceRecorder.class));
+                false, mock(TraceRecorder.class), allowAllBudget());
         when(recallService.recall(any())).thenReturn(List.of(
                 new RecalledArticle(85L, RecallSource.VECTOR, 1, 0.77)));
         when(fusionService.fuse(any(), any(), anyInt())).thenReturn(List.of(

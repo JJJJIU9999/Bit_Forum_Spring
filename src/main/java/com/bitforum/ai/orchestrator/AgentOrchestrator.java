@@ -23,6 +23,7 @@ import com.bitforum.ai.rag.Citation;
 import com.bitforum.ai.service.AiConversationService;
 import com.bitforum.ai.trace.TraceRecorder;
 import com.bitforum.ai.trace.TraceStepType;
+import com.bitforum.ai.usage.AiTokenBudgetGuard;
 
 /**
  * Agent 编排器（M13）。
@@ -40,14 +41,17 @@ public class AgentOrchestrator {
     private final AiConversationService conversationService;
     private final MysqlChatMemoryRepository chatMemoryRepository;
     private final TraceRecorder traceRecorder;
+    private final AiTokenBudgetGuard budgetGuard;
 
     public AgentOrchestrator(List<Agent> agents,
                              AiConversationService conversationService,
                              MysqlChatMemoryRepository chatMemoryRepository,
-                             TraceRecorder traceRecorder) {
+                             TraceRecorder traceRecorder,
+                             AiTokenBudgetGuard budgetGuard) {
         this.conversationService = conversationService;
         this.chatMemoryRepository = chatMemoryRepository;
         this.traceRecorder = traceRecorder;
+        this.budgetGuard = budgetGuard;
         // 过滤掉 type() 返回 null 的实现：null 作为 map key 会让该 Agent 永久无法被路由，
         // 且不会有任何报错，属于静默失效。这里显式跳过并记录警告，便于尽早发现实现错误。
         Map<AgentType, Agent> registry = new EnumMap<>(AgentType.class);
@@ -116,6 +120,21 @@ public class AgentOrchestrator {
             throw new IllegalStateException("没有任何可用的 Agent 实现");
         }
 
+        // 6.1 M18 收尾：单次输入保护 + 单用户每日预算闸门。
+        //     两者都在"调用模型之前"判断，命中时走**同一套**降级路径（不会调用模型、不产生费用）。
+        //     刻意只挡用户主动消耗额度的链路：审核（MQ）与洞察（管理员）不设闸门，
+        //     否则"作者超额"会导致内容不被审核，是拿治理正确性换成本。
+        AiTokenBudgetGuard.BudgetDecision inputDecision = budgetGuard.checkInputLength(currentInput);
+        AiTokenBudgetGuard.BudgetDecision budgetDecision = inputDecision.allowed()
+                ? budgetGuard.check(userId) : inputDecision;
+        if (!budgetDecision.allowed()) {
+            traceRecorder.degrade(budgetDecision.reason(), budgetDecision.detail());
+            log.info("AI 请求被预算闸门拦截：userId={}，reason={}，detail={}",
+                    userId, budgetDecision.reason(), budgetDecision.detail());
+            return persistAndRespond(conversationId,
+                    AgentResponse.degraded(budgetDecision.message()), 0);
+        }
+
         long startedAt = System.currentTimeMillis();
         AgentResponse response;
         try {
@@ -128,7 +147,16 @@ public class AgentOrchestrator {
         }
         int latencyMs = (int) (System.currentTimeMillis() - startedAt);
 
-        // 7. 保存助手回复并更新会话统计。
+        return persistAndRespond(conversationId, response, latencyMs);
+    }
+
+    /**
+     * 保存助手回复、更新会话统计、收尾轨迹，并组装返回体。
+     *
+     * <p>M18 收尾时抽出来：预算闸门拦截的降级回答与正常回答必须走**完全相同**的落库与轨迹收尾逻辑，
+     * 否则"被限流的这轮"会变成历史里查不到、轨迹停在 RUNNING 的孤儿记录。
+     */
+    private AiMessageResponse persistAndRespond(Long conversationId, AgentResponse response, int latencyMs) {
         // M15：本轮引用到的文章 id 一并落库（ai_message.retrieved_doc_ids），
         // 这样刷新页面重新加载历史消息时引用链接依然在。
         var saved = conversationService.saveMessage(conversationId, "assistant", response.content(),

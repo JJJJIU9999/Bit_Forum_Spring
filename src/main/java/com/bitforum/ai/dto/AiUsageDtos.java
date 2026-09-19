@@ -55,4 +55,11 @@ public final class AiUsageDtos {
         private Long totalTokens;
         private BigDecimal cost;
     }
+
+    /** 某个用户在某一天的合计用量：M18 预算闸门（`TokenBudgetGuard`）据此判断是否超限。 */
+    @Data
+    public static class UserUsage {
+        private Long totalTokens;
+        private BigDecimal cost;
+    }
 }

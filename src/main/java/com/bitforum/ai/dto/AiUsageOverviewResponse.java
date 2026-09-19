@@ -34,4 +34,23 @@ public class AiUsageOverviewResponse {
 
     /** 计价口径说明，前端直接展示 */
     private String priceNote;
+
+    /** 预算口径（M18 收尾）：让管理端能解释"为什么某个用户会被限流" */
+    private Budget budget;
+
+    /** 预算配置的对外快照。 */
+    @Data
+    public static class Budget {
+        private boolean enabled;
+        /** 单用户每日 token 上限；<= 0 表示不限制 */
+        private long dailyTokenLimit;
+        /** 单用户每日费用上限（元）；<= 0 表示不限制 */
+        private BigDecimal dailyCostLimit;
+        /** 单次提问输入长度上限（字符） */
+        private int maxInputChars;
+        /** 单次回答输出上限（token） */
+        private int maxOutputTokens;
+        /** 生效范围与边界说明 */
+        private String note;
+    }
 }
