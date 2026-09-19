@@ -12,13 +12,13 @@
 | 开发分支 | `feat/ai-agent`（从干净 `main` 的 `d6dd582` 拉出） |
 | 分支基线 | 与 `main` 差异为 0 个提交 |
 | 远端同步 | 本地分支未 push（按策略，检查点 1 在 M15 完成后） |
-| 当前阶段 | **M17 进行中**：策略已定稿；V16/V17、AnalystAgent、推荐链路（三路召回 + RRF + 编排 + 热榜基线）、洞察存取**已落地并完成评测**（融合 HitRate@10 = 0.8095/0.8889 vs 热榜 0.2381/0.2222）；推荐（含接口与前端）已完成；**M17 功能已全部完成**（评测、推荐链路、运营洞察、三处前端均落地并验证）；待做收尾核对与文档汇总 |
-| 最新 Flyway 迁移 | `V17__add_ai_recommend_log.sql`（AI 推荐记录，含实验批次字段供基线对比） |
-| 模块完成度 | M13-M16 已完成；M17 进行中（验证 + 建表 + 运营分析 Agent + 推荐链路 + 评测已完成；接口/前端/理由生成未做）；M18 未开始 |
-| 当前主线 | M17：推荐接口与前端「相关推荐」、运营洞察异步触发与看板卡片、推荐理由生成 |
+| 当前阶段 | **M18 进行中**：T12/T13 前置验证已通过；V18 `ai_execution_trace` + `TraceRecorder` + 四条链路埋点 + 管理端查询接口已落地（381 项测试全绿）；待做 V19 `ai_usage_stat`、`AiDegradeGuard`、前端轨迹页 |
+| 最新 Flyway 迁移 | `V18__add_ai_execution_trace.sql`（AI 执行轨迹；下一个是 V19 `ai_usage_stat`） |
+| 模块完成度 | M13-M17 已完成；M18 进行中（轨迹模块已完成，用量/降级/前端未做） |
+| 当前主线 | **M18（可观测性、工程化闭环，收敛版）**：Trace + Usage + Degrade + 简单可视化；见 `m18-handoff.md` |
 | 中间件状态 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)` |
-| 数据库状态 | MySQL 8.0.46，Flyway V1-V17 全部 success |
-| 测试状态 | **367 项：358 通过 + 9 项条件跳过**（跳过项均为需要真实 API Key 的调用测试）；前端 33 项 |
+| 数据库状态 | MySQL 8.0.46，Flyway V1-V18 全部 success |
+| 测试状态 | **381 项：372 通过 + 9 项条件跳过**（跳过项均为需要真实 API Key 的调用测试）；前端 33 项 |
 | 审核评测 | 开发集 70 条 + 独立测试集 30 条：漏放率 0%、误伤率 0%、安全召回率 100%；严格准确率 96.7%~97.1% |
 | **推荐评测** | **合成数据 + 留一法**：融合推荐 HitRate@10 = 0.8095（开发集）/ 0.8889（独立测试集），纯热榜 0.2381 / 0.2222，随机 0.2857 / 0.3333；规范 `m17-eval-protocol.md`，报告 `m17-eval-report.md` |
 | 推荐策略 | 已定稿（task_plan.md M17 实施决策）：排序全由 Java 完成、LLM 只写解释；只排除作者本人与已收藏；匿名可见（两路） |
@@ -28,7 +28,7 @@
 | 知识库状态 | 文章审核通过/下架/删除会自动更新；集成测试收尾会清空，需要时用管理页或重建接口恢复 |
 | 审核策略 | 已定稿（task_plan.md M16 实施决策）：决策与动作解耦、自动 PASS 但不自动 REJECT、评测集留独立测试集 |
 | 真实调用验证 | 已通过：工具调用（M14）；RAG 回答带引用（M15）；审核 Agent 8 条样本 8/8（M16-1） |
-| 待办 | M17 收尾：对照 handoff 验收标准逐条核对、汇总本轮改动、确认是否提交 |
+| 待办 | M18：V18 轨迹 + `TraceRecorder` + 四条链路埋点 + 管理端查询（已完成）→ V19 `ai_usage_stat` → `AiDegradeGuard` → 前端轨迹页；决策简报 `m18-decision-brief.md`、交接文档 `m18-handoff.md` 未提交 |
 
 ## 总体进度
 
@@ -41,7 +41,7 @@
 | M15 | RAG 知识库与向量检索 | **已完成** | 278 项测试（276 通过 + 2 跳过）；真实调用回答带引用；异步索引端到端验证通过 | 本文 |
 | M16 | 内容审核 Agent（人机协同） | **接近完成** | 策略已定；V15 + 五维 Agent + 动作规则 + 异步联动 + 管理台完成（307 项测试）；端到端验证通过；仅剩评测实验 | 本文 |
 | M17 | 运营分析 Agent 与智能推荐 | **进行中** | T9/T10/T11 验证通过；V16/V17 建表、AnalystAgent、三路召回 + RRF 融合 + 推荐编排、纯热榜基线、洞察存取已落地（343 项测试）；推荐理由/定序方式与评测口径待决策 | `m17-decision-brief.md` |
-| M18 | 可观测性、评估与工程化闭环 | 未开始 | — | 待创建 |
+| M18 | 可观测性、评估与工程化闭环 | **进行中** | T12/T13 前置验证通过；V18 + `TraceRecorder` + 四条链路埋点（对话/审核/洞察/推荐）+ 管理端轨迹接口已落地（381 项测试）；用量、降级、前端待做 | `m18-decision-brief.md`、`m18-handoff.md` |
 
 ---
 
@@ -1979,3 +1979,146 @@ export M17_VECTOR_PROBE=true
 | 评测数据带 `[M17Eval]` 前缀 | 刻意保留（合成数据标记 + 便于清理）；可用 `M17_EVAL_CLEANUP_ONLY=true` 一键移除 |
 | 跑完全量测试需重建向量索引 | M15 起的既有行为；`progress.md` M17-11 已给出命令 |
 | 洞察报告未做前端历史列表 | 接口已提供 `/history`，看板目前只展示最新一份（够用，非验收项） |
+
+---
+
+### M17-13：M17 正式完结（外部 AI 评审决定，2026-09-19）
+
+评审材料：`m17-decision-brief.md` + `m17-eval-protocol.md` + `m17-eval-report.md`
+（用 `scripts/export-ai-context.sh` 打包，见 `.dev-logs/m17-review-dialog.md`）。
+
+#### 五条最终决定
+
+| # | 决定 | 对本项目的影响 |
+| --- | --- | --- |
+| 1 | M17 按冻结规范**已达标**，但只证明**合成数据上的相对效果** | 答辩必须主动强调：测试集仅 9 人、合成数据、弱热榜、强关注信号 |
+| 2 | 向量区分度**选"乙"：接受 0.0147**，作为已知局限结束 M17 | **不改语料、不换模型、不改算法** |
+| 3 | 点赞反向索引**不补** | 写入后续优化，**不在 M18 前动 M6** |
+| 4 | 评测数据**答辩保留**，但展示成明确的**"演示数据"** | 保留 Seeder + 一键清理；不伪装成正常帖子 |
+| 5 | **M18 范围收敛**：Trace + Usage + Degrade + 简单可视化 | Prompt 动态管理 / LLM-as-Judge / AI 设置页**砍掉**；TokenBudgetGuard 时间足再做 |
+
+> **执行纪律（写入 task_plan）**：M17 的推荐数字已完成实验使命 ——
+> **下一步最不该做的就是继续优化 0.8889**。
+
+#### M17 提交记录（6 个 commit，本地未推送）
+
+```
+862f5b0 docs(graduation): record M17 decisions, technical evidence and progress (M17)
+3ec6c8e test(ai): add M17 evaluation corpus, frozen protocol and report (M17)
+29bf6c5 feat: expose recommendation APIs and render them on three surfaces (M17)
+2d46086 feat(ai): add analyst agent with async insight generation and admin API (M17)
+355afc5 feat(ai): implement three-channel recall, RRF fusion and recommendation reasons (M17)
+6a53993 feat(ai): add M17 insight and recommendation tables (M17)
+```
+
+共 56 个文件。提交后工作区干净，分支 `feat/ai-agent` 领先 `origin` **7 个提交**。
+
+#### M17 最终结算
+
+| 项 | 结果 |
+| --- | --- |
+| 交付物 | Flyway V16/V17、AnalystAgent、推荐链路（三路召回 + RRF + 编排 + 理由）、前端三处 —— **全部达成** |
+| 测试 | 后端 **367 项：358 通过 + 9 条件跳过，0 失败**；前端 **33 项通过** |
+| 评测 | 融合 `HitRate@10` = 0.8095（开发集）/ **0.8889**（独立测试集）；纯热榜 0.2381 / 0.2222 |
+| 真实调用 | 推荐理由 5/5 条；运营洞察 5.0 s / 2695 tokens（且报告主动指出了数据异常） |
+| 文档 | `m17-decision-brief.md`、`m17-eval-protocol.md`、`m17-eval-report.md` + `findings.md` 6.13-6.17 + 本文 M17-0 ~ M17-13 |
+
+#### 交接
+
+`m18-handoff.md` 已写好（新会话入口）：含实测状态、M18 收敛范围、复用清单、
+10 条硬约束、M17 已定稿决定、答辩要强调的三件事、环境与常用命令、演示账号。
+
+---
+
+## 2026-09-19（第二轮：M18）
+
+### M18-0：开工准备、风险验证与决策（2026-09-19）
+
+- **Status:** complete
+
+#### 一、开工前的状态核对
+
+| 项 | 实测 |
+| --- | --- |
+| 环境 | `./stop-local.sh --status`：8080/5173 运行中，三容器 healthy |
+| 分支 | `feat/ai-agent`，领先 origin 7 个提交（未 push） |
+| Flyway | 已到 V17，下一个新迁移是 V18 |
+| 起始测试 | 后端 367 项（358 通过 + 9 跳过）、前端 33 项 |
+
+#### 二、最大风险点的最小验证（沿用 M13-M17 惯例）
+
+按 handoff 的判断，M18 有两个没实测过的技术点，先各自验掉再写业务代码：
+
+| 探针 | 问题 | 结论 |
+| --- | --- | --- |
+| `ToolCallTraceProbe` + `ToolCallTraceSmokeProbe`（T12） | 工具调用链与单步耗时能否采集 | 工具循环在 provider 内部，**最终响应里没有工具链**；包装 `ToolCallback` 可完整采集（真实 DeepSeek 复验：两次工具调用，耗时 3ms/1ms，token 946+110） |
+| `M18AsyncTraceProbe`（T13） | 轨迹能否覆盖异步链路 | MQ **消息头**透传 traceId 可用且不影响消息体；线程池不包装必然丢失、包装后可见并能清理 |
+
+证据与实现约束记入 `findings.md` 6.18 / 6.19，待验证事项表新增 T12 / T13。
+
+#### 三、需要用户拍板的五个问题（已确认，全部取推荐项）
+
+材料见 `m18-decision-brief.md`（`scripts/export-ai-context.sh` 打包为 `.dev-logs/m18-review-context.md`）：
+
+| # | 问题 | 决定 |
+| --- | --- | --- |
+| Q1 | `ai_usage_stat` 的数据来源 | **新建统一埋点明细**：四个 Agent 走同一处，顺带补采审核/推荐理由的 token（现有表里这两个 Agent 根本没有 token 字段） |
+| Q2 | 轨迹表结构 | **单表 + `steps` JSON**：一次调用一行、异步回来 UPDATE 同一行，简单优先 |
+| Q3 | `AiDegradeGuard` 范围 | **回头改造四个既有 Agent**：验收第 3 条要的是全站统一降级表现 |
+| Q4 | 迁移编号 | **V18 = 轨迹、V19 = 用量**（轨迹是核心，先占 V18；修正 handoff/task_plan 原表的编号） |
+| Q5 | 轨迹可见性 | **只在管理端**（`/api/admin/ai/traces`），普通用户看不到 token/费用 |
+
+---
+
+### M18-1：V18 `ai_execution_trace` + `TraceRecorder` + 四条链路埋点（2026-09-19）
+
+- **Status:** complete
+
+#### 一、新增文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `V18__add_ai_execution_trace.sql` | 轨迹表：一行 = 一次 AI 调用；`steps` 存步骤 JSON；`degrade_reason`/`message` 承载降级原因 |
+| `ai/entity/AiExecutionTrace.java`、`ai/mapper/AiExecutionTraceMapper.java` | 实体与 Mapper（Mapper 落在既有的 `com.bitforum.ai.mapper`，无需改 `@MapperScan`） |
+| `ai/trace/TraceRecorder.java` | 记录器：start / attach / step / degrade / finish，**写库失败只记日志** |
+| `ai/trace/TraceContext.java` | ThreadLocal 上下文（T13 结论：只负责同线程，跨线程必须显式交接） |
+| `ai/trace/TraceSession.java`、`TraceStep.java`、`TraceStepType.java`、`TraceDegradeReason.java` | 会话、步骤、步骤类型、降级原因码 |
+| `ai/trace/TracingToolCallback.java` | 工具装饰器（T12 结论：唯一能拿到工具名/入参/返回值/单步耗时的位置） |
+| `ai/trace/TraceHeaders.java` | MQ 消息头约定 `x-trace-id` + 无条件可挂的 `propagate()` |
+| `ai/trace/AiTraceQueryService.java`、`ai/dto/AiTraceResponse.java`、`controller/AdminAiTraceController.java` | 管理端查询（列表不解析 steps、详情解析成数组） |
+
+#### 二、埋点接入的四个链路
+
+| 链路 | 接入点 | 记录的步骤 |
+| --- | --- | --- |
+| 对话（CHAT） | `AgentOrchestrator.chat` 起点 + `QaAgent` 内部 | ROUTE → RETRIEVE → LLM_CALL → TOOL_CALL（每次工具一步）→ PERSIST |
+| 审核（MODERATION） | `ModerationMessageListener`（MQ 消费者） | ASYNC（消费消息）→ PERSIST（审核结果）；降级时记 DEGRADE |
+| 洞察（INSIGHT） | `AiInsightGenerationService.trigger` 开头 + 线程池任务 `attach` 续写 | ASYNC（提交任务）→ LLM_CALL → 收尾 UPDATE 同一行 |
+| 推荐（RECOMMEND） | `RecommendService.recommend`（仅 `reason-enabled=true` 时） | RECALL → FUSION → LLM_CALL（写理由）→ PERSIST |
+
+设计要点：
+
+1. **状态由显式标记驱动**：只有链路里调用过 `degrade(...)` 才记为 `DEGRADED`，
+   不靠"返回值长什么样"反推 —— 否则"部分降级"（检索失败但回答正常）会被判错；
+2. **推荐链路只在会调用模型时才开轨迹**：离线评测（`reason-enabled=false`）会产生
+   成千上万次推荐，那些记录没有解释价值，只会把轨迹表灌满；
+3. **`route` 字段由第一条 ROUTE 步骤派生**，列表页不必解析 JSON 就能看到"分派给谁、有没有回退"；
+4. 审核消息发送处（`ArticleService` / `CommentService`）无条件挂 `TraceHeaders.propagate()`，
+   没有轨迹上下文时是空操作。
+
+#### 三、验证
+
+| 项 | 结果 |
+| --- | --- |
+| 新增测试 | `TraceRecorderIntegrationTest`（6：步骤落库/route 派生/降级原因/跨线程续写/未知 trace 安全/工具包装）、`AdminAiTraceControllerTest`（6：鉴权/过滤/步骤解析/404）、`AgentOrchestratorTest` 新增 2 条轨迹断言 |
+| 后端全量 | **381 项：372 通过 + 9 条件跳过，0 失败**（M17 收尾时 367 项） |
+| 前端 | 33 项通过；`npm run build` 成功（本轮未改前端） |
+| 真实调用 | `ToolCallTraceSmokeProbe` 通过（DeepSeek 两次工具调用全部捕获，token 946/110/1056） |
+
+#### 四、踩到并修掉的问题
+
+| 问题 | 原因 | 处理 |
+| --- | --- | --- |
+| `ModerationTriggerTest` 2 条失败 | 发送处多了一个 `MessagePostProcessor` 参数，`verify` 的签名对不上 | 断言补上 `any(MessagePostProcessor.class)` |
+| `ModerationMessageListenerTest` 6 条 NPE | 监听器新增 `@Autowired TraceRecorder`，`@InjectMocks` 没有对应 mock | 补 `@Mock TraceRecorder` |
+| 全量测试会清空向量索引 | M15 起的既有行为 | 跑完后用 `M17_VECTOR_PROBE=true` 重建 `bitforum-kb` |

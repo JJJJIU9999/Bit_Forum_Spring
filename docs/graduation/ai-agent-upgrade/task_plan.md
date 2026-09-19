@@ -295,18 +295,73 @@ com.bitforum.ai
 **投入优先级（作者判断）**：T11 已证明 M17 的短板是**数据**而不是模型，
 因此时间优先投入「评测数据与 Ground Truth 设计」，而不是继续给推荐 Agent 增加"智能"。
 
-### M18 可观测性、评估与工程化闭环
+#### 收尾决定（2026-09-19 与外部 AI 讨论后确定）
 
-**目标**：让 AI 的行为可解释、成本可管控、效果可量化。
+> 来源：M17 完成后的评审。完整过程见 `m17-eval-report.md`、`progress.md` 的 M17-12。
 
-- **Flyway V18**：`ai_usage_stat`（按用户 / Agent / 天的 Token 与费用统计）、`ai_prompt_template`（Prompt 版本管理）。
-- **Flyway V19**：`ai_execution_trace`（路由 → 工具调用链 → 每步耗时 → Token）。
-- `TraceRecorder` 写入 V19 表；前端「AI 执行轨迹」可视化页 —— 答辩演示的关键功能。
-- `TokenBudgetGuard`：单轮输入上限、单用户日配额（Redis 计数）、超限友好提示。
-- `AiDegradeGuard`：LLM 超时 / 异常 / 额度的统一降级处理。
-- **LLM-as-Judge 评估脚本**：`scripts/ai-eval/` 放 50 条问答样本 + 30 条审核样本，用 DeepSeek 当裁判打分，产出评估报告。
-- 管理员「AI 设置」页：功能开关（问答 / 审核 / 推荐 / 自动通过）、模型参数、预算配置。
-- **验收**：评估报告成文，含准确率、召回率、幻觉率、平均延迟、单次成本。
+1. **M17 按冻结规范已达标，但只证明合成数据上的相对效果** ——
+   答辩必须**主动强调**：测试集仅 9 位用户、数据是合成的、热榜基线偏弱、关注信号过强。
+2. **向量区分度选"接受现状"**：实测 0.0147（目标 0.05）作为**已知局限**结束 M17。
+   **不为了达到目标值重新改语料、换模型或改算法**。
+3. **点赞反向索引不补**：写入后续优化，**不在 M18 之前动 M6 的数据模型**。
+4. **评测数据答辩时保留**，但展示成明确的**"演示数据"**而不是伪装成正常帖子；
+   保留 `M17EvalDataSeeder` 与一键清理能力。
+5. **M18 范围收敛**：聚焦 **Trace + Usage + Degrade + 简单可视化**；
+   Prompt 动态管理、LLM-as-Judge、完整 AI Settings **直接砍掉**；`TokenBudgetGuard` 时间充足再做。
+
+> **执行纪律**：M17 的推荐数字已完成它的实验使命。
+> **下一步最不该做的就是继续优化 0.8889** —— 价值最高的是把 AI 系统
+> 从"功能很多"收束成"全过程可解释、可追踪、可降级"。
+
+### M18 可观测性、评估与工程化闭环（收敛版）
+
+**目标**：把 AI 系统从"功能很多"收束成**"全过程可解释、可追踪、可降级"**。
+
+**要做（按优先级）**：
+
+- **Flyway V19**：`ai_execution_trace`（路由 → 工具调用链 → 每步耗时 → Token）+ `TraceRecorder`
+  —— 这是 M18 的核心，也是答辩演示的关键画面。
+- **Flyway V18**：`ai_usage_stat`（按用户 / Agent / 天的 Token 与费用统计）。
+  **只建这一张表，不含 `ai_prompt_template`。**
+- `AiDegradeGuard`：LLM 超时 / 异常 / 额度的**统一**降级处理
+  （把目前散在各 Agent 里的降级收敛到一处）。
+- 前端「AI 执行轨迹」页 + 用量概览：**简单优先**，不做大而全的报表。
+
+**砍掉（本轮明确不做）**：
+
+- ❌ `ai_prompt_template`（Prompt 动态管理 / 版本表）
+- ❌ LLM-as-Judge 评估脚本
+- ❌ 管理员「AI 设置」页
+
+**时间充足才做**：
+
+- ⏳ `TokenBudgetGuard`（单轮输入上限、单用户日配额、超限友好提示）
+
+**验收（相应调整）**：
+
+1. 任意一次 AI 调用都能查到**完整执行轨迹**（路由、工具调用链、每步耗时、token）；
+2. 用量可按 用户 / Agent / 天 聚合，且**能算出单次成本**；
+3. AI 不可用时全站 AI 功能有**统一的降级表现**，且用户能看懂"为什么降级"；
+4. 轨迹页可演示。
+
+#### 实施决策（2026-09-19 与外部 AI 讨论后确定）
+
+前置验证：T12（工具调用链可埋点）与 T13（轨迹覆盖异步链路）均已实测通过，见 `findings.md` 6.18 / 6.19；
+材料与取舍见 `m18-decision-brief.md`。五个口径问题确定如下：
+
+| # | 问题 | 决定 |
+| --- | --- | --- |
+| 1 | `ai_usage_stat` 的数据来源 | **新建统一埋点明细**（一行 = 一次 LLM 调用）：四个 Agent 走同一处埋点，并顺带补采审核与推荐理由的 token —— 现有表里这两个 Agent 根本没有 token 字段，只聚合既有表会让"按 Agent 统计"名不副实 |
+| 2 | 轨迹表结构 | **单表 `ai_execution_trace` + `steps` JSON**：一次调用写一行、异步段回来 UPDATE 同一行；代价是不能按工具名直接做 SQL 统计（可接受） |
+| 3 | `AiDegradeGuard` 范围 | **回头改造四个既有 Agent**，把各自的 try/catch 与降级文案收敛到 Guard，并用既有 381 项测试做回归 —— 否则验收第 3 条只能算部分达成 |
+| 4 | 迁移编号 | **V18 = `ai_execution_trace`、V19 = `ai_usage_stat`**（轨迹是核心先占 V18，避免留空号；原表编号作废） |
+| 5 | 轨迹与用量的可见性 | **只在管理端**（`/api/admin/ai/**`）：轨迹含用户 id 与提问原文，用量与费用属于运营信息 |
+| 6 | 工具链采集方式 | 包装 `ToolCallback`（`TraceRecorder.wrapTools`）—— T12 证明最终响应里没有工具链，这是唯一能拿到单步耗时的位置 |
+| 7 | 异步链路接法 | traceId 走 ThreadLocal（同线程）+ MQ 消息头（跨进程），异步段 `attach` 后 **UPDATE 同一行**；不修改任何消息体类 |
+| 8 | 推荐链路是否记轨迹 | **记，但只在 `reason-enabled=true` 时**：离线评测会产生成千上万次推荐，那些记录没有解释价值 |
+
+> **注意区分**：M17 决定的是"不优化 0.8889"；
+> M18 对推荐链路做的是**把"为什么是这 10 篇"记下来并展示**（排序算法一行不改）。
 
 ---
 
@@ -321,8 +376,8 @@ com.bitforum.ai
 | V15 | `ai_moderation_record` | AI 审核记录，`feedback` 承载人工反馈 |
 | V16 | `ai_insight_report` | 运营洞察报告 |
 | V17 | `ai_recommend_log` | 推荐记录（评估用） |
-| V18 | `ai_usage_stat`、`ai_prompt_template` | 用量统计与 Prompt 版本表 |
-| V19 | `ai_execution_trace` | Agent 执行轨迹 |
+| V18 | `ai_execution_trace` | Agent 执行轨迹（M18 核心；**编号修正**：轨迹先占 V18） |
+| V19 | `ai_usage_stat` | 用量统计（**不含** `ai_prompt_template` —— M18 收敛时砍掉） |
 
 ---
 
@@ -553,11 +608,14 @@ git diff --check
 - [x] 推荐接口与前端（文章详情页相关推荐 / 看板 AI 洞察卡片 / AI 助手相关帖）
 - [x] 推荐理由生成（LLM 只写解释，不参与选文）
 
-### Phase 6：M18 可观测性与评估
+### Phase 6：M18 可观测性与工程化闭环（收敛版）
 
-- [ ] 新增 Flyway V18 / V19
-- [ ] 实现轨迹可视化与预算管控
-- [ ] 产出 LLM-as-Judge 评估报告
+- [ ] 新增 Flyway V19 `ai_execution_trace` + `TraceRecorder`（核心）
+- [ ] 新增 Flyway V18 `ai_usage_stat`（不含 `ai_prompt_template`）
+- [ ] `AiDegradeGuard`：统一降级
+- [ ] 前端「AI 执行轨迹」页 + 用量概览（简单优先）
+- [ ] （时间充足再做）`TokenBudgetGuard`
+- [x] ~~LLM-as-Judge 评估脚本~~ / ~~Prompt 动态管理~~ / ~~AI 设置页~~（**本轮砍掉**）
 
 ### Phase 7：集成与答辩
 

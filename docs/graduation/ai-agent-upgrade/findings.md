@@ -754,6 +754,8 @@ SPRING_DATASOURCE_PASSWORD=... SPRING_RABBITMQ_PASSWORD=... JWT_SECRET=... mvn t
 | T6 | 单轮对话的真实 Token 消耗与费用 | M13 结束后首次统计 | 待验证 |
 | T7 | 结构化输出在 DeepSeek 上的稳定性 | M16 审核 Agent 验证 | 待验证 |
 | T8 | 异步索引队列与既有 `ArticlePublishMessage` 队列不冲突 | M15 接入 RabbitMQ 时验证 | **已验证通过**（见 6.10）：独立队列 + 独立死信队列，端到端测试两条链路互不影响 |
+| T12 | 工具调用链与单步耗时能否被采集 | M18 开工前的最小验证 | **已验证通过**（见 6.18）：循环在 provider 内部，最终响应无工具链；包装 `ToolCallback` 可采集（真实调用复验） |
+| T13 | 执行轨迹能否覆盖异步链路（MQ + 线程池） | M18 开工前的最小验证 | **已验证通过**（见 6.19）：MQ 消息头透传、线程池显式包装，两条异步链路都能续写同一 trace |
 
 ### 6.1 T1/T2 验证执行记录（2026-09-18）
 
@@ -1549,6 +1551,66 @@ C1 的判据是"同主题与跨主题的平均相似度差"，实测（50 篇合
 
 这反过来印证了融合方式的选择是对的：RRF 按**排名**而非分数计分 ——
 在本项目的数据上，分数绝对值几乎没有意义，排名才有意义。
+
+---
+
+### 6.18 T12 验证执行记录：工具调用链能不能被埋点（M18 前置验证，2026-09-19）
+
+**为什么验**：M18 验收第 1 条要求轨迹里有「路由 → **工具调用链** → **每步耗时** → token」。
+token 与整体耗时 M13-M17 已在采集，但工具链与单步耗时**从未采集过**。
+埋点位置猜错的代价是：功能照常工作、轨迹里却永远没有工具链，而且不会报错。
+
+**探针**：`ToolCallTraceProbe`（stub 模型，纯单测）+ `ToolCallTraceSmokeProbe`（真实 DeepSeek）。
+
+| 问题 | 实测结论 | 证据 |
+| --- | --- | --- |
+| 工具执行循环在哪一层？ | **不在 `ChatClient`**，在 provider（`DeepSeekChatModel.call`）内部 | stub 模型只被调用 1 次；ChatClient 不自己跑循环 |
+| 传入的 `ToolCallback` 实例会被原样使用吗？ | **会**（`ToolCallingChatOptions.getToolCallbacks()` 里是同一引用） | stub 断言 `assertSame` 通过 |
+| 最终 `ChatResponse` 里还有工具链吗？ | **没有**（`hasToolCalls() == false`） | 真实调用实测 |
+| 装饰器能拿到什么？ | 工具名 / 模型给的参数 JSON / 真实返回值 / **单步耗时** | 见下表 |
+
+真实调用实测（一次提问触发两个工具调用，`ToolCallTraceSmokeProbe`）：
+
+```text
+总耗时 1166 ms；工具调用 2 次
+工具=currentServerTime 入参={}                  结果="2026-09-19T21:30:00+08:00"                      单步耗时=3ms
+工具=searchArticles     入参={"keyword": "Redis"}  结果=["Redis 缓存穿透与布隆过滤器", "Redis 分布式锁…"]  单步耗时=1ms
+最终回答 = 服务器当前时间是 2026-09-19T21:30:00+08:00，搜索关键词 Redis 返回了两篇文章，…
+token: prompt=946 completion=110 total=1056
+最终响应 hasToolCalls() = false
+```
+
+**对实现的硬约束（已落地）**：
+`QaAgent` / `AnalystAgent` 不能再把工具对象直接交给 `.tools(...)`，
+必须走 `TraceRecorder.wrapTools(...)` → `ToolCallbacks.from(...)` → 逐个包一层
+`TracingToolCallback` → `.toolCallbacks(...)`。装饰器只记录、不改变行为
+（入参/返回值/异常原样透传，记录只是内存追加，落库在轨迹收尾时统一发生）。
+
+---
+
+### 6.19 T13 验证执行记录：执行轨迹能不能覆盖异步链路（M18 前置验证，2026-09-19）
+
+**为什么验**：AI 调用并不都发生在 HTTP 请求线程 —— 运营洞察走单线程池，
+知识库索引与内容审核走 RabbitMQ。traceId 若只活在请求线程的 ThreadLocal 里，
+异步段就会变成"看不出前因后果的孤立记录"。
+
+**探针**：`M18AsyncTraceProbe`（真实 RabbitMQ + 真实 exchange，探针专用队列）。
+
+| 验证项 | 实测结论 |
+| --- | --- |
+| MQ 用**消息头**透传 traceId | **可行**：发送端 `MessagePostProcessor` 写 header，消费者从 `Message` 读回，值一致 |
+| 加 header 是否影响消息体反序列化 | **不影响**：`KbIndexMessage` 正常还原（`articleId=999999`） |
+| 两个既有消费者是否需要改签名 | **不需要**：`KbIndexMessageListener` / `ModerationMessageListener` 本来就有 `Message rawMessage` 参数 |
+| 线程池里 ThreadLocal 不包装 | **必然丢失**（实测 `null`）—— 这就是必须显式传播的原因 |
+| 包装 Runnable 后 | 子线程可见；任务结束后清理，线程复用时不会串味 |
+
+**对实现的硬约束（已落地）**：
+1. 新增消息头常量 `x-trace-id`（`TraceHeaders`），业务发送处无条件挂
+   `TraceHeaders.propagate()` —— 当前线程没有轨迹时它是空操作，因此不需要判空分支；
+2. 跨进程/跨线程一律走 `TraceRecorder.attach(...)` / `attachOrStart(...)`，
+   在目标线程重新挂载后**UPDATE 同一行**，而不是另写一条记录；
+3. 消费者读不到 traceId（旧消息、非 AI 触发的请求）时新建一条轨迹，
+   保证"审核仍然有轨迹"，不会因为上游没有 traceId 就什么都不记。
 
 ---
 
