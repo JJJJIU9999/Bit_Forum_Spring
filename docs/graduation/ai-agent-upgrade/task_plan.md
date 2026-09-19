@@ -213,15 +213,39 @@ com.bitforum.ai
 
 **目标**：AI 参与真实审核流程，并有可量化的人工反馈闭环。
 
-- **Flyway V15**：`ai_moderation_record`（维度分、置信度、决策、耗时、模型版本、人工反馈）。
-- `ModerationAgent`：多维度 Prompt（违规 / 广告 / 灌水 / 敏感）+ 结构化输出映射到 Java record。
-- 决策联动 M2 审核流：
-  - 置信度 ≥ 高阈值且判定 PASS → 自动通过（可配置开关，答辩演示「自动」与「转人工」两条路径）。
-  - 置信度低或判定 REJECT → 生成**待审提示**进入管理员审核台，不直接删帖（安全兜底）。
-- 接入点：`ArticleService.submitForAudit` 后、`CommentService.publish` 后，均异步执行。
+- **Flyway V15**：`ai_moderation_record`（AI 判断 + 系统动作 + 五维分 + 耗时 + 模型版本 + 人工反馈）。
+- `ModerationAgent`：五维 Prompt + 结构化输出映射到 Java record。
+- 决策联动 M2 审核流（规则见下方「实施决策」）。
+- 接入点：`ArticleService.submit()` 后、`CommentService.publish()` 后，均异步执行。
 - 人工反馈闭环：审核台标记「AI 判断正确 / 错误」写入 `feedback` 字段。
 - 接口：`GET /api/admin/ai/moderation/records`、`POST /api/admin/ai/moderation/records/{id}/feedback`、`POST /api/ai/moderation/precheck`。
-- **验收**：100 条标注样本对照实验，输出准确率 / 精确率 / 召回率 / 漏判率。
+- **验收**：100 条**合成**评测样本对照实验，在**独立测试集**上输出准确率 / 精确率 / 召回率 / 漏判率。
+
+#### 实施决策（2026-09-19 与外部 AI 讨论后确定）
+
+> 来源：T7 结构化输出验证（`findings.md` 6.12）暴露出「判据决定质量」的问题后，
+> 由项目作者与外部 AI 讨论确定；完整讨论材料见 `m16-decision-brief.md`。
+
+**三条最关键的约定**：
+
+1. **Decision 与 Action 解耦**：`PASS / REVIEW / REJECT` 只是 **AI 的判断**，不等于系统动作。
+   记录中分别保存 `decision`（AI 判断）与 `action`（系统实际执行的动作），两者独立演化。
+2. **自动 PASS 但不自动 REJECT**：唯一允许的自动动作是「高置信 PASS 自动放行」（可配置开关，默认关闭）；
+   **绝不自动驳回或删除任何内容** —— 误判代价不对称，错删用户内容远比漏放一条难挽回。
+3. **评测集必须留独立测试集**：100 条合成样本划分开发集与测试集；
+   阈值与提示词只在**开发集**上调整，最终指标只在**从未参与调参的测试集**上产出。
+
+**具体规则**：
+
+| 项 | 规则 |
+| --- | --- |
+| 三档判断 | `PASS` / `REVIEW` / `REJECT`，仅代表 AI 判断，不等于数据库动作 |
+| 文章 | AI 只提供建议；默认人工确认；可配置「高置信 PASS 自动放行」；**绝不自动驳回** |
+| 评论 | 保持发布即公开；AI 事后检测；`REVIEW` → 普通待处理记录，`REJECT` → 高优先级记录；不自动删除 |
+| 边界内容 | **检测高召回、执行高精度**：明确违规判 `REJECT`，模糊内容判 `REVIEW` |
+| 风险维度 | 五维：`harmful` / `promotion` / `fraud` / `spam` / `sensitive` |
+| 综合风险分 | **不由模型输出**，由 Java 按确定性规则计算（保证可复现、可解释） |
+| 评测样本 | 100 条**合成**数据并如实声明；自动放行阈值由实验结果确定，**不预设** 0.9 / 0.3 |
 
 ### M17 运营分析 Agent 与智能推荐
 
