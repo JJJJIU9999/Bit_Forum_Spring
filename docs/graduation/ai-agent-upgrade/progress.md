@@ -244,6 +244,7 @@ RabbitMQ 验证：`rabbitmq-diagnostics -q ping` → `Ping succeeded`；队列�
 | `spring-ai-spring-boot-dependencies` 坐标 404 | 1 | 确认该 artifact 名称不存在，改用 `spring-ai-bom` 与各 starter 的 POM 直接验证依赖关系 |
 | **redis-stack-server 模块未加载**：`MODULE LIST` 空、`FT._LIST` 报 unknown command | 1 | 根因是 `command: ["redis-server", ...]` 覆盖了镜像的 `/entrypoint.sh`（它负责 `--loadmodule`）。改用 `REDIS_ARGS` 环境变量追加参数后模块全部正常加载 |
 | Redis 向量探针脚本解析 score 报 `unsupported format string passed to bytes.__format__` | 1 | 实测发现 RediSearch 返回的 KNN 距离是十进制字符串（如 `b'0.00362026691437'`）而非二进制 float32，改用 `float()` 解析 |
+| **push 后 CI backend job 失败**（Errors: 226）：`ERR unknown command 'FT._LIST'` | 1 | 根因是 CI 的 redis service 仍是 `redis:7-alpine`（无 RediSearch），而 M13 只换了本地镜像、未同步 CI。已改用普通 Redis 容器在 6380 端口**本地复现**同一异常链，确认因果；修复为把 CI 镜像换成 `redis/redis-stack-server:7.4.0-v8`，并用全新 Stack 容器（0 索引）跑全量验证 278 项通过。详见 findings.md 6.11 |
 
 ---
 
@@ -905,10 +906,30 @@ jedis 的 `ftInfo` 返回的 `attributes` 是**扁平的键值列表**而不是 
 | 知识库统计数与已发布文章数一致 | ✅ 全量重建后 `indexedDocuments == publishedArticles` |
 | 提问能召回正确帖子且回答带引用链接 | ✅ 真实调用实测：回答带 `[1]` 标注，引用 articleId=1469，前端渲染可点击原帖链接 |
 
+### M15-6：CI 环境修复（push 后发现）
+
+- **Status:** complete
+
+首次 push 后 GitHub Actions 的 backend job 失败（`Errors: 226`）。完整定位过程与证据见 findings.md 6.11。
+
+| 项 | 内容 |
+| --- | --- |
+| 失败步骤 | `Run backend tests`（frontend job 正常通过） |
+| 根因 | CI 的 redis service 是 `redis:7-alpine`，**不含 RediSearch 模块**；向量库初始化执行 `FT._LIST` 报 unknown command → Spring 上下文启动失败 |
+| 连锁现象 | 226 个 errors 全部来自 Spring 的 "context failure threshold exceeded"，**不是 226 个独立缺陷** |
+| 本地复现 | 用 `redis:7-alpine` 容器（6380 端口）跑单测，得到完全相同的异常链，确认因果 |
+| 修复 | `.github/workflows/ci.yml` 的 redis 镜像改为 `redis/redis-stack-server:7.4.0-v8`（不加 `command` 覆盖，否则模块不加载） |
+| 验证 | 用**全新** Redis Stack 容器（0 索引，等同 CI 干净环境）跑全量 → **278 项通过**；索引自动创建且 `dim = 768` |
+
+**有意不采用的做法**（保留 CI 的有效覆盖）：删除或跳过向量相关测试、在 CI 关闭 `initialize-schema`、跳过 backend job。
+
+**后续提醒**：CI 每次运行都会重新下载 ONNX 模型（102MB，实测可成功）。
+若后续发现 backend job 耗时过长，可加 `actions/cache` 缓存 `~/.cache/bitforum-onnx`——本次按"最小改动"原则未加。
+
 ### M15 已完成（小结）
 
-四个提交覆盖：模型验证（`96fcae9`）→ 建表与向量库（`29f96d8`）→ 分块与索引（`0c81b27`）
-→ 检索与引用（`e963bf3`）→ 异步索引与管理页（本次）。
+五个提交覆盖：模型验证（`96fcae9`）→ 建表与向量库（`29f96d8`）→ 分块与索引（`0c81b27`）
+→ 检索与引用（`e963bf3`）→ 异步索引与管理页（`930a081`），外加 CI 环境修复（本次）。
 
 遗留（不阻塞交付）：
 

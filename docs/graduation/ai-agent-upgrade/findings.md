@@ -1207,6 +1207,50 @@ approve() 事务内：article.status 仍是 PENDING
 下架     → 异步移除 → 文档记录消失 → 检索结果中不再出现
 ```
 
+### 6.11 CI 环境配置漂移：push 后 backend job 失败（2026-09-19）
+
+**现象**：M15 完成后首次 push `feat/ai-agent`，GitHub Actions 的 backend job 失败，
+汇总行为 `Tests run: 278, Failures: 0, Errors: 226, Skipped: 2`。
+
+**根因**（CI 日志原文）：
+
+```text
+Error creating bean with name 'vectorStore' defined in class path resource
+[com/bitforum/ai/config/VectorStoreConfig.class]:
+ERR unknown command 'FT._LIST', with args beginning with:
+    at org.springframework.ai.vectorstore.redis.RedisVectorStore.afterPropertiesSet(RedisVectorStore.java:406)
+```
+
+CI 的 redis service 用的是 **`redis:7-alpine`（不含 RediSearch 模块）**，
+而 M15 引入的 Redis 向量库需要 `FT.*` 命令；`initialize-schema: true` 使 bean 初始化时
+就执行 `FT._LIST` 检查索引 → 命令不存在 → `vectorStore` 创建失败 →
+依赖它的 `kbIndexService` / `ragService` / `qaAgent` 依次失败 → **Spring 上下文根本起不来**。
+
+**226 个 errors 不是 226 个缺陷**：Spring Test 的 "context failure threshold (1) exceeded"
+机制在第一次加载失败后跳过后续重试并直接计为错误，日志里的绝大多数条目都只是同一根因的连锁。
+
+**本地复现**（确认因果链，排除模型下载/数据库等其他可能）：
+
+```bash
+docker run -d --name bitforum-redis-plain -p 6380:6379 redis:7-alpine
+SPRING_DATA_REDIS_PORT=6380 ./mvnw -Dtest=RedisVectorStoreSmokeTest test
+# 相同的异常链：qaAgent → ragService → vectorStore → ERR unknown command 'FT._LIST'
+```
+
+**为什么会漏**：M13 把本地 Redis 换成 `redis/redis-stack-server:7.4.0-v8` 时**没有同步更新 CI 配置**；
+而 CI 只在 push 时触发，M13-M15 期间的 16 个提交一直没有推送，配置漂移长期不可见。
+本地始终是 Stack 版本，因此本地全量测试一直是绿的。
+
+**修复**：`.github/workflows/ci.yml` 的 redis service 改为 `redis/redis-stack-server:7.4.0-v8`。
+不写 `command` 覆盖——该镜像 Cmd 是 `/entrypoint.sh`，覆盖会导致模块不加载（见 5.1）。
+
+**修复验证**：用一个**全新的** Redis Stack 容器（0 索引，等同 CI 的干净环境）跑全量测试 →
+**278 项通过**；索引 `bitforum-kb` 被自动创建且 `dim = 768`。
+
+**教训**：引入新的中间件能力（如 RediSearch）时，必须同步检查 CI 与部署环境是否具备该能力。
+**本地测试全绿不能证明 CI 可用** —— 两者的中间件镜像可能不同；环境配置属于代码的一部分，
+应与依赖变更一起提交。
+
 ---
 
 ## 七、风险记录

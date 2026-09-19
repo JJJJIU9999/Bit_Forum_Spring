@@ -25,7 +25,12 @@ jobs:
           --health-timeout=5s
           --health-retries=10
       redis:
-        image: redis:7-alpine
+        # 必须用 Redis Stack：M15 的 RAG 向量检索依赖 RediSearch 模块（FT.* 命令），
+        # 普通 redis:7-alpine 会在 RedisVectorStore 初始化时报
+        # "ERR unknown command 'FT._LIST'"，导致整个 Spring 上下文启动失败。
+        # 注意：该镜像没有 Entrypoint、Cmd 是 /entrypoint.sh，
+        # 不要用 command 覆盖，否则模块不会加载（findings.md 5.1 踩过）。
+        image: redis/redis-stack-server:7.4.0-v8
         ports:
           - 6379:6379
         options: >-
