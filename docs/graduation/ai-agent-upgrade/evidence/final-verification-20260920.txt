@@ -1,0 +1,23 @@
+=== 2026-09-20 19:04:04 后端全量测试 ===
+命令: ./mvnw -s maven-settings.xml test
+退出码: 0
+关键统计: [WARNING] Tests run: 416, Failures: 0, Errors: 0, Skipped: 10
+证据: /tmp/m18-4a-backend.log（完整日志）
+
+=== 2026-09-20 19:04:16 其余验证 ===
+前端测试  退出码=0  统计=      Tests  36 passed (36)
+前端构建  退出码=0  ✓ built in 786ms
+compose config  退出码=0
+导出脚本  退出码=0  警告数=0  输出=已写入：/tmp/m18-4a-export.md（502 行） 
+git diff --check  退出码=0  输出=
+
+=== 2026-09-20 19:04:24 变更范围与凭据检查 ===
+.env 已被忽略: .env
+未提交改动文件数: 19
+凭据扫描: 无命中
+
+=== 2026-09-20 19:04:47 向量索引重建 ===
+命令: M17_VECTOR_PROBE=true ./mvnw -s maven-settings.xml -Dtest=RecommendVectorRecallProbe test
+退出码: 0
+关键统计: Tests run: 1, Failures: 0；bitforum-kb num_docs=114
+证据: /tmp/m18-4a-reindex.log

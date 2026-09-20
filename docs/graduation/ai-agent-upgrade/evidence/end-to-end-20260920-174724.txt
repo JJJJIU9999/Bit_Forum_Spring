@@ -1,0 +1,47 @@
+# M18 真实端到端耗时观察（真实 DeepSeek 调用）
+生成时间: 2026-09-20T17:47:24.397033
+Java: 17.0.20.1 / OS: Mac OS X aarch64
+每场景: 预热 1 次 + 记录 5 次（共 30 次真实调用）
+固定输入（对话类）:
+  普通QA: 用一句话解释 Java 里的 happens-before 原则。
+  RAG: 站内关于 Spring 循环依赖的讨论都说了什么？
+  工具: 站内现在最热门的 3 篇文章是哪些？给我标题和文章 id。
+推荐: RecommendRequest.forArticleDetail(topN=5)；洞察: 管理员触发 + 轮询报告终态
+预算: 本测试上下文临时把单用户每日上限调高，避免观察被预算闸门截断
+
+样本明细（未指定单位的毫秒）:
+scenario=qa_plain e2e_ms=1288 trace_status=SUCCESS tokens=3738 retrieve=true tool_call=false llm_ms=1218 retrieve_ms=14 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_plain e2e_ms=1118 trace_status=SUCCESS tokens=3684 retrieve=true tool_call=false llm_ms=1035 retrieve_ms=15 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_plain e2e_ms=1264 trace_status=SUCCESS tokens=3656 retrieve=true tool_call=false llm_ms=1165 retrieve_ms=26 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_plain e2e_ms=1380 trace_status=SUCCESS tokens=3690 retrieve=true tool_call=false llm_ms=1301 retrieve_ms=26 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_plain e2e_ms=984 trace_status=SUCCESS tokens=3668 retrieve=true tool_call=false llm_ms=905 retrieve_ms=19 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_rag e2e_ms=2706 trace_status=SUCCESS tokens=3983 retrieve=true tool_call=false llm_ms=2618 retrieve_ms=36 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_rag e2e_ms=2224 trace_status=SUCCESS tokens=3926 retrieve=true tool_call=false llm_ms=2158 retrieve_ms=29 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_rag e2e_ms=2144 trace_status=SUCCESS tokens=3934 retrieve=true tool_call=false llm_ms=2033 retrieve_ms=51 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_rag e2e_ms=1841 trace_status=SUCCESS tokens=3925 retrieve=true tool_call=false llm_ms=1694 retrieve_ms=81 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_rag e2e_ms=2176 trace_status=SUCCESS tokens=3937 retrieve=true tool_call=false llm_ms=2097 retrieve_ms=32 tool_ms=0 degrade_reason=null failure=-
+scenario=qa_tool e2e_ms=1910 trace_status=SUCCESS tokens=7384 retrieve=true tool_call=true llm_ms=1825 retrieve_ms=30 tool_ms=17 degrade_reason=null failure=-
+scenario=qa_tool e2e_ms=2278 trace_status=SUCCESS tokens=7380 retrieve=true tool_call=true llm_ms=2209 retrieve_ms=23 tool_ms=26 degrade_reason=null failure=-
+scenario=qa_tool e2e_ms=2004 trace_status=SUCCESS tokens=7383 retrieve=true tool_call=true llm_ms=1923 retrieve_ms=29 tool_ms=18 degrade_reason=null failure=-
+scenario=qa_tool e2e_ms=1765 trace_status=SUCCESS tokens=7379 retrieve=true tool_call=true llm_ms=1686 retrieve_ms=36 tool_ms=24 degrade_reason=null failure=-
+scenario=qa_tool e2e_ms=2357 trace_status=SUCCESS tokens=7383 retrieve=true tool_call=true llm_ms=2286 retrieve_ms=25 tool_ms=26 degrade_reason=null failure=-
+scenario=recommend e2e_ms=1366 trace_status=SUCCESS tokens=840 retrieve=false tool_call=false llm_ms=1212 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=recommend e2e_ms=1685 trace_status=SUCCESS tokens=830 retrieve=false tool_call=false llm_ms=1555 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=recommend e2e_ms=1589 trace_status=SUCCESS tokens=855 retrieve=false tool_call=false llm_ms=1459 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=recommend e2e_ms=1566 trace_status=SUCCESS tokens=827 retrieve=false tool_call=false llm_ms=1462 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=recommend e2e_ms=1385 trace_status=SUCCESS tokens=833 retrieve=false tool_call=false llm_ms=1261 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=insight e2e_ms=3700 trace_status=SUCCESS tokens=2566 retrieve=false tool_call=true llm_ms=3605 retrieve_ms=0 tool_ms=1 degrade_reason=null failure=-
+scenario=insight e2e_ms=3689 trace_status=RUNNING tokens=null retrieve=false tool_call=false llm_ms=0 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=insight e2e_ms=4294 trace_status=SUCCESS tokens=2594 retrieve=false tool_call=true llm_ms=4182 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=insight e2e_ms=3996 trace_status=SUCCESS tokens=2614 retrieve=false tool_call=true llm_ms=3757 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+scenario=insight e2e_ms=4597 trace_status=SUCCESS tokens=2676 retrieve=false tool_call=true llm_ms=4424 retrieve_ms=0 tool_ms=0 degrade_reason=null failure=-
+
+按场景汇总:
+scenario=qa_plain n=5 average_ms=1207 p50_ms=1264 p95_ms=1380 min_ms=984 max_ms=1380 （n=5，P95 为小样本描述值）
+scenario=qa_rag n=5 average_ms=2218 p50_ms=2176 p95_ms=2706 min_ms=1841 max_ms=2706 （n=5，P95 为小样本描述值）
+scenario=qa_tool n=5 average_ms=2063 p50_ms=2004 p95_ms=2357 min_ms=1765 max_ms=2357 （n=5，P95 为小样本描述值）
+scenario=recommend n=5 average_ms=1518 p50_ms=1566 p95_ms=1685 min_ms=1366 max_ms=1685 （n=5，P95 为小样本描述值）
+scenario=insight n=5 average_ms=4055 p50_ms=3996 p95_ms=4597 min_ms=3689 max_ms=4597 （n=5，P95 为小样本描述值）
+
+说明: 端到端耗时包含真实模型调用；本地持久化开销另见 local-persistence-*.txt（约 3.9 ms，占比 <1%）。
+局限: 5 个样本的 P95 仅为小样本描述值；本机单实例串行观察，不代表并发能力、生产 QPS 或 SLA。
