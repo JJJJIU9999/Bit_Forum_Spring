@@ -5,13 +5,14 @@
 
 ## 当前状态
 
-- 当前阶段：**阶段 4B（最终收口报告与交接）已完成 —— 任务书全部 14 个阶段收束**
-- 阶段状态：阶段 0 / 1A / 1B / 1C / 2A / 2B / 2C / 2D / 3A / 3B / 3C / 3D / 4A / 4B **全部完成**
-- 技术结论：**已具备合并 `main` 的条件**（对照任务书 §六 的 14 条清单，全部满足）；剩余动作是作者的提交与合并决策
+- 当前阶段：**全部完成并已推送**：任务书 14 个阶段 + 外部复查整改（4C）+ 主流程隔离观察（4D）+ CI 修复（4E）
+- 阶段状态：阶段 0 / 1A / 1B / 1C / 2A-2D / 3A-3D / 4A-4E **全部完成**
+- 仓库状态：`feat/ai-agent` = `fd1734e`，**已 push 且远端 CI success**（`35515595980`，2m37s）；工作区干净
+- 技术结论：**已具备合并 `main` 的条件**（对照任务书 §六 的 14 条清单，全部满足）；剩余动作是作者的合并决策
 - 最后更新时间：2026-09-20（本轮会话）
 - 当前分支：`feat/ai-agent`
-- 当前 HEAD：`514f301 docs(graduation): refresh status summary with push and CI results (M18)`
-- 工作区摘要：**不干净** —— 5 项已跟踪文件被修改 + 2 项新增未跟踪（详见「阶段 0」第三节），均属**前一执行会话**的收口工作，本轮未改动它们
+- 当前 HEAD：`fd1734e ci: cache the ONNX embedding model and retry its download`（远端一致，CI success）
+- 工作区摘要：**干净**（收口改动已全部提交并推送）
 - 下一步：**等作者决策**（均需明确授权）：
   ① 合并回 `main`（建议 `merge --no-ff` + 合并后 CI + 打版本 tag）——**当前尚未授权**；
   ② 是否补第二项建议补强（审核 MQ 与洞察线程池的链路级故障注入）——**不补则必须保持"未验证"口径**
@@ -703,6 +704,29 @@
 - 同步更新的文档：`ai-performance-observation.md` 新增 §七.5（并把 §八.5 中"不支持 AI 不拖慢主流程"
   改为"已由 §七.5 部分回答"）、`final-closure-report.md`（未执行项与整改表）、`docs/technical-debt.md`。
 - 仍不覆盖：更高并发、真实供应商长尾延迟、后台审核/洞察同时运行时的资源占用 —— 已在三处文档中如实保留。
+
+### 阶段 4E：CI 失败定位与修复（2026-09-20）
+
+推进过程：5 个收口提交推送后 CI **success**（`35515217489`，2m26s）；第 6 个提交（主流程隔离观察）
+的 CI **failure**（`35515292170`）。查看失败日志后定位到**与代码无关的环境问题**：
+
+```
+Failed to cache the resource: URL [.../tokenizer.json]
+Caused by: java.net.SocketException: Connection reset
+```
+
+即 CI runner 每次都要从 HuggingFace 下载 ONNX 模型与 tokenizer，网络抖动直接让 Spring 上下文启动失败
+（M15 起 `TransformersEmbeddingModel` 在类路径存在时无条件构建，无法用开关关闭）。
+
+修复（提交 `ci: cache the ONNX embedding model and retry its download`）：
+
+1. backend job 增加 `actions/cache` 缓存 `~/.cache/bitforum-onnx`（key 含模型标识）；
+2. 缓存未命中时先用 `curl -fL --retry 5 --retry-delay 3 --retry-all-errors` **带重试地预下载**，
+   把网络依赖收敛到一个可重试、日志清晰的步骤；
+3. 同批把该脆弱点记入 `docs/technical-debt.md`（并注明"缓存首次填充仍需外网"的残余风险）。
+
+修复后 CI **success**（`35515595980`，2m37s，HEAD `fd1734e`）—— 即**最新 HEAD 的远端 CI 已经真正覆盖本轮全部改动**
+（不再依赖旧 HEAD 的绿）。
 
 ## 发现但不在本轮处理的问题
 

@@ -12,10 +12,10 @@
 | --- | --- |
 | 核验时间 | 2026-09-20（阶段 4B） |
 | 分支 | `feat/ai-agent` |
-| HEAD | `514f301 docs(graduation): refresh status summary with push and CI results (M18)` |
+| HEAD | `fd1734e ci: cache the ONNX embedding model and retry its download`（**已推送；最新 HEAD 的 CI success**，run `35515595980`，2m37s） |
 | 相对 `main` | 领先 **41** 个提交 |
-| 相对 `origin/feat/ai-agent` | **0** —— 但仅指**截至 `514f301` 的已提交内容**：远端有、CI 有；**本轮收口改动尚未提交，因此尚未经过任何远端 CI** |
-| 工作区 | **不干净**：收口改动全部未提交（按用途归并见 §八）。**精确路径数以 `git status --short | wc -l` 为准** —— 该数字会随收口动作变化，故本文不硬编码（写作快照 21 个路径；整改后见 §十一） |
+| 相对 `origin/feat/ai-agent` | **0**（本地与远端一致：`fd1734e`）—— 本轮**全部 7 个收口提交均已推送并通过远端 CI** |
+| 工作区 | **干净**（收口改动已按 §九 的拆分全部提交并推送；§八 保留为改动清单与拆分依据） |
 | 向量索引 | `bitforum-kb` = **114** 个片段（4A 全量测试后已重建） |
 | 上下文导出 | 页眉与内嵌声明**一致**（41 / 416 项 / 2026-09-20 快照口径），stderr 无易变指标告警 |
 
