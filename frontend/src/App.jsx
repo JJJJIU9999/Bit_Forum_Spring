@@ -17,6 +17,9 @@ import ManageComments from './pages/admin/ManageComments.jsx'
 import ManageReports from './pages/admin/ManageReports.jsx'
 import ManageUsers from './pages/admin/ManageUsers.jsx'
 import ManageCategories from './pages/admin/ManageCategories.jsx'
+import KnowledgeBase from './pages/admin/KnowledgeBase.jsx'
+import ModerationRecords from './pages/admin/ModerationRecords.jsx'
+import AiTraces from './pages/admin/AiTraces.jsx'
 import { clearAuth, getCurrentUser } from './api/request.js'
 import { getUnreadNotificationCount } from './api/notificationApi.js'
 
@@ -71,6 +74,10 @@ function App() {
           <Route path="reports" element={<ManageReports />} />
           <Route path="users" element={<ManageUsers />} />
           <Route path="categories" element={<ManageCategories />} />
+          <Route path="kb" element={<KnowledgeBase />} />
+          <Route path="moderation" element={<ModerationRecords />} />
+          {/* M18：AI 执行轨迹与用量 —— 答辩演示的关键画面 */}
+          <Route path="ai-traces" element={<AiTraces />} />
         </Route>
       </Route>
 

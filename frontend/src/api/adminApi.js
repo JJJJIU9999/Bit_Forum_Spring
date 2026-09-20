@@ -111,3 +111,58 @@ export function resolveReport(payload) {
 export function rejectReport(payload) {
   return request.put('/admin/reports/reject', payload)
 }
+
+// M15：AI 知识库统计与全量重建（文章分块、向量化后的入库状态）。
+export function getKbStats() {
+  return request.get('/admin/ai/kb/stats')
+}
+
+export function rebuildKnowledgeBase() {
+  return request.post('/admin/ai/kb/rebuild')
+}
+
+// M16：AI 审核记录查询、人工反馈与处理标记。
+export function pageModerationRecords(params = { pageNum: 1, pageSize: 10, pendingOnly: true }) {
+  return request.get('/admin/ai/moderation/records', { params })
+}
+
+export function submitModerationFeedback(recordId, feedback) {
+  return request.post(`/admin/ai/moderation/records/${recordId}/feedback`, { feedback })
+}
+
+export function markModerationHandled(recordId) {
+  return request.post(`/admin/ai/moderation/records/${recordId}/handle`)
+}
+
+// M17：AI 运营洞察。生成是异步的 —— generate 只负责受理并立刻返回，
+// 之后用 getInsightStatus 轮询，完成后用 getLatestInsight 取报告。
+export function generateInsight() {
+  return request.post('/admin/ai/insight/generate')
+}
+
+export function getLatestInsight() {
+  return request.get('/admin/ai/insight/latest')
+}
+
+export function getInsightStatus() {
+  return request.get('/admin/ai/insight/status')
+}
+
+export function getInsightHistory(limit = 10) {
+  return request.get('/admin/ai/insight/history', { params: { limit } })
+}
+
+// M18：AI 执行轨迹。一次 AI 调用一条记录，含路由、工具调用链、每步耗时与 token。
+// 列表接口刻意不返回步骤明细（轨迹表会随使用量增长），详情接口才返回 steps。
+export function pageAiTraces(params = { pageNum: 1, pageSize: 10 }) {
+  return request.get('/admin/ai/traces', { params })
+}
+
+export function getAiTraceDetail(traceId) {
+  return request.get(`/admin/ai/traces/${traceId}`)
+}
+
+// M18：AI 用量概览（按天 / 按 Agent / Top 用户 + 成本估算）。
+export function getAiUsageOverview(days = 7) {
+  return request.get('/admin/ai/usage/overview', { params: { days } })
+}

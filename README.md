@@ -14,18 +14,23 @@ Bit Forum 是一个个人毕业设计项目。后端基于 Spring Boot、MyBatis
 - Redis 指标：String 记录浏览量、Set 完成用户级点赞去重、ZSet 维护热门排行，定时同步核心指标到 MySQL。
 - 后台管理：文章审核、用户/板块/举报管理、统计看板和依赖健康检查。
 - 工程交付：Flyway 迁移、OpenAPI、Actuator、后端/前端自动化测试、GitHub Actions 与五服务 Docker Compose 编排。
+- AI 能力（M13-M18）：四个协作 Agent —— 站内问答助手（RAG 检索 + 12 个工具调用 + 引用回答）、
+  内容审核（五维风险评估 + 人机协同反馈闭环）、运营分析（异步洞察报告）、智能推荐（三路召回 + RRF 融合，模型只写理由）；
+  配套可观测性（每次调用一条执行轨迹：路由 / 工具链 / 每步耗时 / token，以及用量成本与统一降级）
+  与用量预算闸门（单用户每日上限、超限统一降级、单次输入输出保护）。
 
 ## 技术栈
 
 | 层次 | 技术 |
 | --- | --- |
 | 后端 | Java 17、Spring Boot 3.4.5、Spring MVC、MyBatis-Plus 3.5.9 |
-| 数据 | MySQL 8、Flyway V1-V12、Redis 7 |
+| 数据 | MySQL 8、Flyway V1-V19、Redis Stack（RediSearch，含向量索引） |
 | 消息 | RabbitMQ 3、Publisher Confirm/Returns、手动 ACK/NACK、DLX/DLQ |
 | 安全 | JWT、BCrypt、Jakarta Validation、用户/管理员拦截器 |
 | 可观测与接口 | Actuator、Springdoc OpenAPI |
 | 测试 | JUnit 5、Spring Boot Test、Mockito、Vitest、Testing Library |
 | 前端 | React 19、Vite 7、React Router 7、Axios、Nginx |
+| AI | Spring AI 1.1.8、DeepSeek（对话与工具调用）、本地 ONNX 嵌入模型（RAG 检索） |
 | 交付 | Maven、Docker、Docker Compose、GitHub Actions |
 
 ## 系统架构
@@ -36,10 +41,13 @@ flowchart LR
     Nginx -->|React 静态资源| React[React 应用]
     Nginx -->|/api 与 /uploads| App[Spring Boot :8080]
     App -->|MyBatis-Plus / Flyway| MySQL[(MySQL 8)]
-    App -->|浏览、点赞、热榜、幂等快速判断| Redis[(Redis 7)]
-    App -->|文章审核通过事件| MQ[RabbitMQ]
+    App -->|浏览、点赞、热榜、幂等判断、向量检索| Redis[(Redis Stack)]
+    App -->|文章审核通过 / 知识库索引 / 内容审核事件| MQ[RabbitMQ]
     MQ -->|手动 ACK / DLQ| Consumer[通知消费者]
+    MQ -->|独立队列与死信| KbConsumer[知识库索引 / 内容审核消费者]
     Consumer --> MySQL
+    KbConsumer --> MySQL
+    App -->|对话与工具调用| LLM[DeepSeek]
     App --> Uploads[(uploads-data 卷)]
 ```
 
@@ -86,7 +94,7 @@ DRAFT 草稿
 ├── src/main/java/com/bitforum/    # Controller、Service、Mapper、DTO、配置与任务
 ├── src/main/resources/
 │   ├── application.yml            # 环境变量驱动的运行配置
-│   └── db/migration/              # Flyway V1-V12
+│   └── db/migration/              # Flyway V1-V19（V13-V19 为 AI 模块）
 ├── src/test/                       # 后端控制器、服务与集成测试
 ├── frontend/                       # React/Vite 前端与 Nginx 镜像
 ├── docs/
@@ -100,7 +108,7 @@ DRAFT 草稿
 
 ## 快速启动
 
-前置要求：Docker Desktop，且本机 `80`、`8080`、`3307`、`6379`、`5672`、`15672` 端口可用。
+前置要求：Docker Desktop，且本机 `80`、`8080`、`3306`、`6379`、`5672`、`15672` 端口可用。
 
 ```powershell
 git clone https://github.com/JJJJIU9999/Bit_Forum_Spring.git
@@ -118,7 +126,7 @@ docker compose up --build -d
 | Swagger UI | `http://localhost:8080/swagger-ui.html` |
 | Actuator | `http://localhost:8080/actuator/health` |
 | RabbitMQ 管理台 | `http://localhost:15672` |
-| MySQL（宿主机） | `localhost:3307` |
+| MySQL（宿主机） | `localhost:3306` |
 
 ```powershell
 # 停止服务，保留 MySQL 和上传数据卷
@@ -129,12 +137,13 @@ docker compose down
 
 ## 本地测试与开发
 
-后端大部分 Spring 集成测试会连接 MySQL、Redis 和 RabbitMQ。可先启动三个依赖服务，再将测试进程的环境变量设为与 `.env` 一致：
+后端大部分 Spring 集成测试会连接 MySQL、Redis 和 RabbitMQ。可先启动三个依赖服务，再把测试进程的环境变量设为与 `.env` 一致。
+
+MySQL 宿主机端口为 `3306`，与 `application.yml` 的默认值一致，因此无需设置 `SPRING_DATASOURCE_URL`。
 
 ```powershell
 docker compose up -d mysql redis rabbitmq
 
-$env:SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3307/bit_forum?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8'
 $env:SPRING_DATASOURCE_USERNAME='root'
 $env:SPRING_DATASOURCE_PASSWORD='<与 MYSQL_ROOT_PASSWORD 一致>'
 $env:SPRING_RABBITMQ_USERNAME='<与 .env 一致>'
@@ -162,5 +171,12 @@ GitHub Actions 使用独立的 MySQL、Redis 和 RabbitMQ service containers 运
 - MQ 是可测试的基础可靠链路，不宣称 Exactly Once、绝对不丢消息或完整自动补偿。
 - Redis 指标与 MySQL 之间是定时同步的最终一致性，当前仍是全量扫描已发布文章。
 - 后端测试在本地依赖三个基础服务；CI 通过 service containers 提供可复现环境。
+- AI 能力全部有降级路径：模型不可用、超时或超出用量预算时，对话给出统一文案、推荐退化为「无理由列表」，
+  论坛主流程不受影响；降级原因可在管理端「执行轨迹」页查到。
+- AI 效果数据的口径与局限：内容审核在 70 条开发集 + 30 条独立测试集（人工标注）上评测；
+  推荐使用**合成数据 + 留一法**（测试集仅 9 位用户），指标不代表真实社区流量 ——
+  详见 [推荐评测报告](./docs/graduation/ai-agent-upgrade/m17-eval-report.md)。
+- 用量预算刻意只做三件事（单用户每日 token / 费用上限、超限统一降级、单次输入输出保护），
+  不含套餐、充值、余额、会员等级或分布式配额中心。
 
 更完整的开放问题和本轮已处理项见 [工程技术债](./docs/technical-debt.md)。

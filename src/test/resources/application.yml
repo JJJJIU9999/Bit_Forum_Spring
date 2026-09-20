@@ -31,6 +31,41 @@ spring:
         acknowledge-mode: manual
   flyway:
     baseline-on-migrate: true
+  # ==================== Spring AI（M13 起） ====================
+  ai:
+    deepseek:
+      # 从环境变量读取真实 Key；没有配置时回退为占位符。
+      # 占位符是必需的：DeepSeekChatAutoConfiguration 的 deepSeekChatModel()
+      # 没有 @ConditionalOnProperty，只要 starter 在类路径上就会无条件创建 bean
+      # 并校验 api-key 非空（缺失时抛 IllegalArgumentException），
+      # 因此占位符保证常规测试的 Spring 上下文能正常启动。
+      #
+      # 注意不要写成硬编码字符串：那会覆盖环境变量传入的真实 Key，
+      # 导致开启 DEEPSEEK_CHAT_ENABLED=true 做真实调用时认证失败（实测踩到，401）。
+      api-key: ${DEEPSEEK_API_KEY:test-placeholder-key-not-used-for-real-calls}
+      chat:
+        # 默认关闭真实 AI 调用：常规测试不依赖网络与真实 Key。
+        # 需要真实调用验证时（DeepSeekSmokeTest）用环境变量 DEEPSEEK_CHAT_ENABLED=true 打开。
+        enabled: ${DEEPSEEK_CHAT_ENABLED:false}
+    embedding:
+      transformer:
+        # ===== M15：与 src/main/resources/application.yml 保持一致 =====
+        # 测试类路径下的 application.yml 会整体覆盖主配置（同名文件优先），因此这里必须重复一遍；
+        # 否则测试上下文会把模型缓存到系统临时目录，且模型来源与生产不一致。
+        # 模型选型依据见 findings.md 6.8（bge-base-zh-v1.5，维度 768）。
+        onnx:
+          model-uri: https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main/onnx/model_quantized.onnx
+        tokenizer:
+          uri: https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main/tokenizer.json
+        cache:
+          enabled: true
+          directory: ${user.home}/.cache/bitforum-onnx
+    vectorstore:
+      redis:
+        # 与主配置一致：测试同样需要建索引才能验证检索链路。
+        initialize-schema: true
+        index-name: ${BITFORUM_KB_INDEX:bitforum-kb}
+        prefix: "bitforum:kb:"
 
 jwt:
   secret: bit-forum-test-secret-minimum-32-bytes

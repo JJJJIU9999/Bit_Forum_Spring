@@ -12,11 +12,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.ai.entity.AiRecommendLog;
+import com.bitforum.ai.recommend.RecommendService;
+import com.bitforum.ai.recommend.RecommendService.RecommendRequest;
+import com.bitforum.ai.recommend.RecommendService.RecommendResult;
+import com.bitforum.ai.recommend.RecommendService.RecommendedArticle;
 import com.bitforum.common.HotArticle;
 import com.bitforum.common.Result;
 import com.bitforum.dto.ArticleDraftRequest;
@@ -27,6 +33,7 @@ import com.bitforum.entity.Article;
 import com.bitforum.service.ArticleService;
 import com.bitforum.service.NotificationService;
 import com.bitforum.service.RedisService;
+import com.bitforum.util.JwtUtil;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -44,6 +51,14 @@ public class ArticleController {
     private RedisService redisService;
     @Autowired
     private NotificationService notificationService;
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private RecommendService recommendService;
+
+    /** 相关推荐一次最多返回多少条：防止前端传个大数把接口当列表接口用。 */
+    private static final int MAX_RECOMMEND_LIMIT = 10;
 
     @PostMapping("/publish")
     @Operation(summary = "提交文章审核", description = "需要登录。保留 publish 路径，当前语义为提交审核", security = @SecurityRequirement(name = "bearerAuth"))
@@ -212,16 +227,64 @@ public class ArticleController {
     }
 
     @GetMapping("/detail")
-    @Operation(summary = "查询文章详情", description = "公开接口，仅可查询已发布文章")
-    public Result<Article> detail(@RequestParam Long articleId) {
-        Article article = articleService.findPublishedById(articleId);
+    @Operation(summary = "查询文章详情",
+            description = "公开接口。已发布文章对所有人可见；草稿、待审核、已驳回、已下架仅作者本人可见（需携带 Bearer Token）")
+    public Result<Article> detail(
+            @RequestParam Long articleId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long currentUserId = parseOptionalUserId(authorization);
+        Article article = articleService.findReadableById(articleId, currentUserId);
         if (article == null) {
             return Result.fail(404, "文章不存在");
         }
-        Long views = redisService.getViews(articleId);
-        article.setViewCount(views.intValue());
-        article.setLikeCount(redisService.getLikeCount(articleId).intValue());
+        // 只有已发布文章才叠加 Redis 中的浏览量/点赞数；
+        // 未公开内容不计浏览量，也不展示公开互动数据
+        if (ArticleService.STATUS_PUBLISHED.equals(article.getStatus())) {
+            Long views = redisService.getViews(articleId);
+            article.setViewCount(views.intValue());
+            article.setLikeCount(redisService.getLikeCount(articleId).intValue());
+        }
         return Result.ok("文章查找成功", article);
+    }
+
+    @GetMapping("/recommendations")
+    @Operation(summary = "查询文章的相关推荐",
+            description = """
+                    公开接口，**未登录也可访问**。
+                    推荐由三路召回（内容相似 / 近期热度 / 关注关系）+ RRF 融合排序产生，**排序完全由服务端决定**；
+                    未登录访客没有个人行为数据，自动退化为"内容相似 + 热度"两路。
+                    推荐理由由 AI 生成；AI 不可用时列表照常返回（只是没有理由），不影响主流程。""")
+    public Result<List<RecommendedArticle>> recommendations(
+            @RequestParam Long articleId,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long currentUserId = parseOptionalUserId(authorization);
+        int topN = limit == null || limit < 1 ? 5 : Math.min(limit, MAX_RECOMMEND_LIMIT);
+        try {
+            RecommendResult result = recommendService.recommend(new RecommendRequest(
+                    AiRecommendLog.SCENE_ARTICLE_DETAIL, currentUserId, articleId, topN, null));
+            return Result.ok("相关推荐查询成功", result.articles());
+        } catch (RuntimeException e) {
+            // 推荐是增强能力：任何失败都不应该让文章页报错，返回空列表由前端显示"暂无推荐"
+            return Result.ok("相关推荐暂不可用：" + e.getMessage(), List.of());
+        }
+    }
+
+    /**
+     * 解析可选的登录身份。
+     *
+     * 详情接口本身是公开的，但作者需要能查看自己的草稿与已驳回文章，
+     * 因此这里解析可选的 Bearer Token：缺失或无效时返回 null，按匿名处理。
+     */
+    private Long parseOptionalUserId(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+        try {
+            return jwtUtil.getUserId(authorization.substring(7));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @GetMapping("/view")

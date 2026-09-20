@@ -281,3 +281,41 @@ input:focus, select:focus, textarea:focus { border-color: var(--terracotta); out
   .dialog-actions .primary-button, .dialog-actions .ghost-button, .dialog-actions .danger-button { width: 100%; }
 }
 @media (max-width: 390px) { .dashboard-stat-grid { grid-template-columns: 1fr; } .article-detail-footer { grid-template-columns: 1fr; } }
+
+/* 未公开内容（草稿/待审核/已驳回/已下架）的预览提示。
+   这类文章仅作者本人可见，因此页面按"预览"呈现：给提示、不给公开互动入口。 */
+.unpublished-banner {
+  margin: 14px 0;
+  padding: 11px 14px;
+  color: var(--terracotta);
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid #f0d3c9;
+  border-radius: var(--radius-sm);
+  background: var(--terracotta-soft);
+}
+
+/* ===== M17：文章详情页「相关推荐」 ===== */
+.related-section { margin-top: 18px; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--paper); }
+.related-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.related-item { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+.related-title { display: flex; align-items: baseline; gap: 9px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 15px; font-weight: 700; text-align: left; }
+.related-title:hover { color: var(--forest); text-decoration: underline; }
+.related-rank { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: var(--radius-full); background: var(--forest-soft); color: var(--forest); font-family: var(--font-sans); font-size: 12px; font-weight: 800; }
+.related-category { color: var(--ink-faint); font-family: var(--font-sans); font-size: 12px; }
+.related-reason { margin: 0; color: var(--ink-faint); font-size: 13px; line-height: 1.7; }
+.related-reason::before { content: 'AI 理由 · '; color: var(--terracotta); font-family: var(--font-sans); font-size: 11px; font-weight: 800; letter-spacing: .06em; }
+.related-reason-muted { font-style: italic; }
+.related-reason-muted::before { content: ''; }
+@media (max-width: 640px) { .related-section { padding: 19px; } }
+
+/* ===== M17：管理员看板「AI 运营洞察」卡片 ===== */
+.ai-insight-card h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; }
+.ai-insight-card .md-content { margin-top: 6px; }
+.ai-insight-meta { margin: 14px 0 0; color: var(--ink-faint); font-family: var(--font-sans); font-size: 12px; }
+
+/* ===== M17：AI 助手回答末尾的「相关帖子」 ===== */
+.ai-related { margin: 10px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+.ai-related ul { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.ai-related li { display: grid; gap: 2px; }
+.ai-related-reason { color: var(--ink-faint); font-family: var(--font-sans); font-size: 11px; line-height: 1.6; }

@@ -6,8 +6,11 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-bit_forum}
     ports:
-      # 左边 3307 是宿主机端口，右边 3306 是容器内 MySQL 端口
-      - "3307:3306"
+      # 宿主机与容器端口一致，均为 3306。
+      # 历史上曾映射为 3307，是为了避开 Windows 主机上已有的本机 MySQL；
+      # 当前 macOS 开发机 3306 空闲，改回 3306 后 application.yml 默认配置可直接生效，
+      # 本机启动后端无需再显式设置 SPRING_DATASOURCE_URL。
+      - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -17,11 +20,23 @@ services:
       retries: 10
       start_period: 20s
 
+  # M13 起使用 Redis Stack：在 Redis 7.4 基础上内置 RediSearch 模块，
+  # 这是 Spring AI 的 RedisVectorStore 做向量检索的前置条件。
+  # 原来的 redis:7-alpine 没有该模块，向量索引无法创建。
+  # 注意：镜像变了，6379 端口和协议不变，现有 RedisService 的 String/Set/ZSet 用法零改动。
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:7.4.0-v8
     restart: unless-stopped
+    environment:
+      # 镜像自带的 /entrypoint.sh 负责 --loadmodule 加载 RediSearch 等模块，
+      # 这里只通过 REDIS_ARGS 追加参数，千万不要用 command 覆盖 entrypoint，
+      # 否则模块不会加载，FT.CREATE 等向量检索命令会报 unknown command。
+      REDIS_ARGS: "--appendonly yes"
     ports:
       - "6379:6379"
+    volumes:
+      # 用独立的卷名，避免与旧的 redis:7-alpine 数据文件冲突
+      - redis-stack-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -69,6 +84,8 @@ services:
       SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-604800000}
+      # DeepSeek 大模型 API Key（M13 起）。留空时应用仍可正常启动，AI 功能会走降级链路。
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     volumes:
       - uploads-data:/app/uploads
 
@@ -82,4 +99,5 @@ services:
 
 volumes:
   mysql-data:
+  redis-stack-data:
   uploads-data:

@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.bitforum.ai.trace.TraceHeaders;
 import com.bitforum.config.RabbitMQConfig;
 import com.bitforum.entity.Article;
 import com.bitforum.entity.ArticleAuditRecord;
@@ -30,7 +31,10 @@ import com.bitforum.mapper.ArticleAuditRecordMapper;
 import com.bitforum.mapper.ArticleFavoriteMapper;
 import com.bitforum.mapper.ArticleMapper;
 import com.bitforum.mapper.CategoryMapper;
+import com.bitforum.message.AfterCommitExecutor;
 import com.bitforum.message.ArticlePublishMessage;
+import com.bitforum.message.KbIndexMessage;
+import com.bitforum.message.ModerationMessage;
 
 @Service
 public class ArticleService {
@@ -48,6 +52,8 @@ public class ArticleService {
     private ArticleFavoriteMapper articleFavoriteMapper;
     @Autowired
     private RabbitTemplate rabbitTemplate;
+    @Autowired
+    private AfterCommitExecutor afterCommitExecutor;
     @Autowired
     private CommentService commentService;
     @Autowired
@@ -111,6 +117,9 @@ public class ArticleService {
         }
         article.setStatus(STATUS_PENDING);
         articleMapper.updateById(article);
+        // M16：进入待审核状态后异步送 AI 分析。AI 只提供建议，是否通过仍由人工决定
+        //（自动放行需显式开启开关，且仅限高置信 PASS）。
+        sendModerationMessage(articleId);
     }
 
     public List<Article> listAll() {
@@ -220,6 +229,30 @@ public class ArticleService {
         return article;
     }
 
+    /**
+     * 按可见性查询文章详情。
+     *
+     * 已发布文章对所有人可见；草稿、待审核、已驳回、已下架仅作者本人可见。
+     * 这样作者能预览自己的未公开内容，同时不会通过详情接口泄露他人的草稿。
+     *
+     * @param id            文章 id
+     * @param currentUserId 当前登录用户 id；未登录传 null
+     * @return 可见时返回文章，不可见或不存在时返回 null
+     */
+    public Article findReadableById(Long id, Long currentUserId) {
+        Article article = articleMapper.selectById(id);
+        if (article == null) {
+            return null;
+        }
+        boolean published = STATUS_PUBLISHED.equals(article.getStatus());
+        boolean owner = currentUserId != null && currentUserId.equals(article.getUserId());
+        if (!published && !owner) {
+            return null;
+        }
+        fillArticleMetadata(article);
+        return article;
+    }
+
     @Transactional
     public void favoriteArticle(Long userId, Long articleId) {
         Article article = articleMapper.selectById(articleId);
@@ -317,6 +350,8 @@ public class ArticleService {
         articleMapper.updateById(article);
         recordAudit(articleId, auditorId, STATUS_PUBLISHED, null);
         sendPublishMessage(article, auditorId);
+        // M15：文章进入已发布状态，异步写入知识库
+        sendKbIndexMessage(articleId);
         log.info("文章审核通过，MQ 消息已发送");
     }
 
@@ -352,6 +387,8 @@ public class ArticleService {
         recordAudit(articleId, auditorId, STATUS_OFFLINE, reason);
         redisService.deleteArticleData(articleId);
         notificationService.notifyArticleOffline(article, auditorId, reason);
+        // M15：文章离开已发布状态，异步把它的向量移出知识库
+        sendKbIndexMessage(articleId);
     }
 
     private Article createArticle(String title, String content, Long categoryId, Long userId, String status, String coverUrl) {
@@ -396,6 +433,8 @@ public class ArticleService {
         articleFavoriteMapper.delete(new QueryWrapper<ArticleFavorite>().eq("article_id", articleId));
         articleMapper.deleteById(articleId);
         redisService.deleteArticleData(articleId);
+        // M15：文章被删除后，知识库索引也要移除（消费者查不到文章即按移除处理）
+        sendKbIndexMessage(articleId);
     }
 
     private void sendPublishMessage(Article article, Long auditorId) {
@@ -411,6 +450,63 @@ public class ArticleService {
                 RabbitMQConfig.ARTICLE_EXCHANGE,
                 RabbitMQConfig.ARTICLE_PUBLISH_ROUTING_KEY,
                 articlePublishMessage);
+    }
+
+    /**
+     * 发送知识库索引消息（M15）。
+     *
+     * <p><b>必须在事务提交后发送。</b>如果直接在事务内发送，消费者可能在事务提交前就查到旧状态：
+     * 例如审核通过时文章在库里仍是 PENDING，监听器会把它判定为「不该在知识库中」而移除索引，
+     * 随后事务提交把文章改成 PUBLISHED，却不会再触发索引 —— 造成永久漏索引。
+     * 因此这里注册事务同步回调，等提交完成再投递。
+     */
+    private void sendKbIndexMessage(Long articleId) {
+        afterCommitExecutor.run(() -> doSendKbIndexMessage(articleId));
+    }
+
+    private void doSendKbIndexMessage(Long articleId) {
+        KbIndexMessage message = new KbIndexMessage();
+        message.setArticleId(articleId);
+        message.setMessageId(UUID.randomUUID().toString());
+        try {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.ARTICLE_EXCHANGE,
+                    RabbitMQConfig.KB_INDEX_ROUTING_KEY,
+                    message);
+        } catch (RuntimeException e) {
+            // 知识库索引是增强能力：MQ 不可用时不能反过来影响发帖、下架等主流程。
+            // 漏掉的消息可以在恢复后通过管理员的全量重建接口补齐。
+            log.error("知识库索引消息发送失败：articleId={}", articleId, e);
+        }
+    }
+
+    /**
+     * 发送内容审核消息（M16）。
+     *
+     * <p>同样在事务提交后投递。MQ 故障不影响发帖主流程：
+     * 漏掉的审核消息只会让该文章回到"纯人工审核"的原始流程，不会导致内容丢失或误放行。
+     */
+    private void sendModerationMessage(Long articleId) {
+        afterCommitExecutor.run(() -> doSendModerationMessage(articleId));
+    }
+
+    private void doSendModerationMessage(Long articleId) {
+        ModerationMessage message = new ModerationMessage();
+        message.setTargetType(ModerationMessage.TARGET_ARTICLE);
+        message.setTargetId(articleId);
+        message.setMessageId(UUID.randomUUID().toString());
+        try {
+            // M18：把当前请求的轨迹 id 挂到消息头上。业务请求通常没有轨迹
+            // （propagate() 会退化成不做任何事的处理器），但 AI 助手触发的写操作例外 ——
+            // 那种情况下审核链路会接在同一 traceId 上，管理端能看到完整因果。
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.ARTICLE_EXCHANGE,
+                    RabbitMQConfig.MODERATION_ROUTING_KEY,
+                    message,
+                    TraceHeaders.propagate());
+        } catch (RuntimeException e) {
+            log.error("内容审核消息发送失败：articleId={}", articleId, e);
+        }
     }
 
     private void recordAudit(Long articleId, Long auditorId, String auditStatus, String reason) {

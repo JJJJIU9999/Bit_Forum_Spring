@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router'
 import App from './App.jsx'
 import './styles/variables.css'
 import './styles/layout.css'
+import './styles/ai-panel.css'
+import './styles/ai-trace.css'
 import './style.css'
 
 createRoot(document.getElementById('root')).render(
