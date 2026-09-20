@@ -30,6 +30,19 @@
 - GitHub Actions 使用 MySQL、Redis、RabbitMQ service containers 提供可复现环境，本地开发则通过 Compose 启动三个依赖。
 - 尚未将测试系统拆成完全无依赖的单元测试和独立的集成测试 profile。
 
+### Medium Priority：CI 仍依赖外网下载 ONNX 嵌入模型
+
+- M15 起测试上下文会加载本地 ONNX 模型与 tokenizer（`TransformersEmbeddingModel` 在类路径存在时
+  无条件构建，无法用开关关闭）。CI 原先没有任何缓存，**每次都要从 HuggingFace 下载上百 MB**。
+- 实测后果：一次 `push` 的 backend job 因
+  `Failed to cache the resource … SocketException: Connection reset` 直接失败——
+  失败原因与当次代码无关，属环境/网络抖动。
+- **已缓解**（2026-09-20，提交 `ci: cache the ONNX embedding model and retry its download`）：
+  给 backend job 加 `actions/cache` 缓存 `~/.cache/bitforum-onnx`，并在缓存未命中时用
+  `curl --retry 5 --retry-all-errors` **先带重试地预下载**，把网络依赖收敛到一个可重试的步骤。
+- **仍未根治**：缓存首次填充仍需外网；彻底消除需要把模型文件托管到项目可用的位置
+  （或让 CI 用替身 embedding 模型，但那会削弱 RAG 链路的测试覆盖）。
+
 ### Medium Priority：自动化测试与本地开发共用同一个 Redis 向量索引
 
 - 全量 `mvn test` 会清空 Redis 向量索引 `bitforum-kb`（M15 起的既有行为），

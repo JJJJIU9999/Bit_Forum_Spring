@@ -63,6 +63,35 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+      # M15 起测试上下文会加载本地 ONNX 嵌入模型与 tokenizer（TransformersEmbeddingModel
+      # 在类路径存在时无条件构建，无法用开关关闭，见 findings.md 6.8.1）。
+      # 不缓存时每次 CI 都要从 HuggingFace 下载上百 MB，网络抖动会直接让上下文启动失败
+      # （实测出现过 `Failed to cache the resource ... SocketException: Connection reset`）。
+      - name: Cache ONNX embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bitforum-onnx
+          # 模型标识与 application.yml 的 transformers 配置保持一致；换模型时改这里的 key
+          key: bitforum-onnx-bge-base-zh-v1.5-quantized-v1
+          restore-keys: |
+            bitforum-onnx-bge-base-zh-v1.5-
+      - name: Pre-download ONNX model with retry
+        # 缓存未命中时先带重试地下载（比在 Spring 上下文启动阶段失败更可控、日志更清晰）；
+        # 已命中缓存时这一步几乎瞬间完成（文件已存在则不重复下载）。
+        run: |
+          CACHE_DIR="$HOME/.cache/bitforum-onnx"
+          mkdir -p "$CACHE_DIR"
+          BASE="https://huggingface.co/Xenova/bge-base-zh-v1.5/resolve/main"
+          for pair in "model_quantized.onnx:onnx/model_quantized.onnx" "tokenizer.json:tokenizer.json"; do
+            FILE="${pair%%:*}"; REMOTE="${pair##*:}"
+            if [ -s "$CACHE_DIR/$FILE" ]; then
+              echo "已存在，跳过下载：$FILE"
+              continue
+            fi
+            echo "下载 $REMOTE ..."
+            curl -fL --retry 5 --retry-delay 3 --retry-all-errors -o "$CACHE_DIR/$FILE" "$BASE/$REMOTE"
+          done
+          ls -la "$CACHE_DIR"
       - name: Run backend tests
         run: mvn -B test
 
