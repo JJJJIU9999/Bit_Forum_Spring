@@ -42,7 +42,7 @@ import com.bitforum.ai.mapper.AiExecutionTraceMapper;
  *   <li>工具包装：装饰后的回调被调用时，工具名/入参/返回值会进入轨迹步骤。</li>
  * </ol>
  */
-@SpringBootTest
+@SpringBootTest(properties = "spring.rabbitmq.listener.simple.auto-startup=false")
 class TraceRecorderIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(TraceRecorderIntegrationTest.class);
@@ -115,7 +115,8 @@ class TraceRecorderIntegrationTest {
         createdTraceIds.add(session.traceId());
 
         traceRecorder.step(TraceStepType.ROUTE, "QA", "路由到问答助手");
-        traceRecorder.degrade(TraceDegradeReason.RETRIEVE_FAILED, null);
+        traceRecorder.degrade(TraceDegradeReason.RETRIEVE_FAILED,
+                "provider connection reset: http://internal.example");
         traceRecorder.finish(null, null, null, null);
 
         AiExecutionTrace trace = find(session.traceId());
@@ -123,6 +124,8 @@ class TraceRecorderIntegrationTest {
         assertEquals(TraceDegradeReason.RETRIEVE_FAILED, trace.getDegradeReason());
         assertEquals(TraceDegradeReason.userMessage(TraceDegradeReason.RETRIEVE_FAILED),
                 trace.getMessage(), "降级必须带一句用户看得懂的说明");
+        assertTrue(!trace.getSteps().contains("internal.example"),
+                "轨迹也会被管理端展示，不能落入底层连接详情：" + trace.getSteps());
     }
 
     /** 异步链路的核心验证：另一条线程接着写，最终仍是同一行。 */

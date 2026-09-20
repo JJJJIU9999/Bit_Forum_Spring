@@ -201,13 +201,17 @@ public class TraceRecorder {
      * 各层只负责如实标记，最终状态由收尾时统一决定 —— 这样"全站统一的降级表现"
      * 才是结构上成立的，而不是靠四个 Agent 各自自觉。
      */
-    public void degrade(String reason, String message) {
+    public void degrade(String reason, String detail) {
         TraceSession session = TraceContext.current();
         if (session == null) {
             return;
         }
-        String userMessage = message == null || message.isBlank()
-                ? TraceDegradeReason.userMessage(reason) : message;
+        // 轨迹会被管理端直接展示，不能把 provider 的 URL、连接错误或认证文本当作 message 落库。
+        // 原始 detail 只写日志；对外与轨迹均使用可枚举原因码的统一文案。
+        String userMessage = TraceDegradeReason.userMessage(reason);
+        if (detail != null && !detail.isBlank()) {
+            log.debug("AI 降级内部详情：reason={}，detail={}", reason, detail);
+        }
         session.markDegraded(reason, userMessage);
         step(TraceStepType.DEGRADE, reason == null ? TraceDegradeReason.LLM_ERROR : reason, userMessage);
     }
