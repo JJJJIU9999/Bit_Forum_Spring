@@ -124,6 +124,26 @@ shift_headings() {
        { if (!in_code && $0 ~ /^#/) print "##" $0; else print }'
 }
 
+# 易变指标检查（**只提示、不改写**）：
+# 内嵌文档里的 Git 快照（领先提交数 / push 状态 / 工作区）若没标注日期，会和页眉的实时值
+# 并列出现在同一份上下文包里，读的人无法判断哪个是当前状态。这里只在 stderr 打印提示，
+# 不修改任何文件、不影响退出码，也不阻断导出 —— 历史记录本身是允许保留的。
+VOLATILE_PATTERN='领先 [0-9]+ 个提交|尚未 push|未 push|工作区干净'
+warn_volatile_snapshots() {
+  local target="$1" label="$2" hits
+  [[ -f "$target" ]] || return 0
+  hits="$(grep -nE "$VOLATILE_PATTERN" "$target" 2>/dev/null | head -3 || true)"
+  [[ -z "$hits" ]] && return 0
+  # 已经标了日期/快照/历史字样的文档视为已消歧，不再提示
+  if grep -qE '截至 [0-9]{4}-[0-9]{2}-[0-9]{2}|快照|历史记录|写于 [0-9]{4}-[0-9]{2}-[0-9]{2}' "$target" 2>/dev/null; then
+    return 0
+  fi
+  {
+    echo "[warn] $label 含易变 Git 指标但未见日期/快照标注，可能与页眉实时值并列造成误读："
+    echo "$hits" | sed 's/^/        /'
+  } >&2
+}
+
 git_info() {  BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo '?')"
   LAST="$(git -C "$ROOT" log -1 --oneline 2>/dev/null || echo '?')"
   DIRTY="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
@@ -150,6 +170,9 @@ emit_header() {
   fi
   echo "- 测试基线：$TEST_LINE"
   echo
+  echo "> **本页眉的 5 项是实时值**：分支/提交/工作区/测试基线与下方正文里内嵌文档中的同类指标"
+  echo "> 可能来自不同时间点 —— 那些是「截至其标注日期」的历史快照，冲突时**一律以本页眉为准**。"
+  echo
   echo "> **给 AI 的话**：以下是只读上下文。请**先复述你对项目的理解再回答**；"
   echo "> 未提供的文件不要假设其内容；需要更多材料时请明确说明需要哪个文件。"
   echo
@@ -157,6 +180,7 @@ emit_header() {
   echo
   echo "## 一、项目简报"
   echo
+  warn_volatile_snapshots "$BRIEF" "项目简报"
   shift_headings < "$BRIEF"
   echo
   echo "---"
@@ -164,9 +188,10 @@ emit_header() {
 }
 
 emit_readme() {
-  echo "## 二、项目 README（注意其中有已过期信息，见简报第五节）"
+  echo "## 二、项目 README（已与 M13-M18 收口状态同步）"
   echo
   if [[ -f "$README" ]]; then
+    warn_volatile_snapshots "$README" "README"
     shift_headings < "$README"
   else
     echo "（README.md 不存在）"
@@ -198,6 +223,7 @@ emit_files() {
     rel="${abs#"$ROOT"/}"
     lines="$(wc -l < "$abs" | tr -d ' ')"
     echo "### 3.$idx \`$rel\`"
+    warn_volatile_snapshots "$abs" "相关文件 $rel"
     echo
     echo '```'"$(lang_for "$abs")"
     if [[ "$lines" -gt "$MAX_LINES_PER_FILE" ]]; then
