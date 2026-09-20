@@ -1,5 +1,16 @@
 # BitForum AI Agent 化升级 —— 技术勘察与发现记录
 
+## 九、2026-09-20 最终收口只读基线
+
+- 分支为 `feat/ai-agent`，HEAD 为 `514f301`，相对本地 `main` 领先 41 个提交；`origin/HEAD...HEAD` 为 `0 41`。本轮开始时工作区干净。
+- README 已表述 M13–M18 与克制版 `TokenBudgetGuard` 已完成；`m18-status-summary.md`、`external-ai-briefing.md`、`progress.md` 顶部和 `毕业设计文档总览.md` 仍把不同日期的 Git/推送状态写成当前事实，存在同一导出包内新旧快照混排风险。
+- `scripts/export-ai-context.sh` 已动态生成页眉，但会原样拼入项目简报和 README；因此根因是被嵌入文档含未标注的旧动态快照，不是页眉的 Git 查询错误。
+- 已有 `AiTokenBudgetGuardTest`、`AiUsageRecorderTest`、`AiDegradeGuardTest`、`AgentOrchestratorTest` 与控制器测试。后续先评估其断言能否直接形成故障注入和预算边界证据，避免为展示目的改变生产路由。
+- 首次运行新增隔离测试时，测试配置的 RabbitMQ 默认凭据与本机容器不一致，监听器启动被拒绝；MySQL 连接和 Flyway V19 校验成功。性能观察与故障注入均不使用消息消费，因此测试类通过 `spring.rabbitmq.listener.simple.auto-startup=false` 关闭测试上下文的 listener 自动启动，既不读取 `.env` 也不改变生产配置。
+- 故障注入第一次真正请求不可达回环端口后命中 Spring AI 默认的 10 次重试与指数退避；这是正确的 provider 行为，但不适合可重复的单测。测试专用属性固定 `spring.ai.retry.max-attempts=1`，仅让故障注入在一次实际连接失败后断言降级；生产重试策略未改变。
+- 故障注入发现真实缺陷：`TraceRecorder.degrade(reason, detail)` 将 provider 的异常详情作为轨迹 `message` 保存，虽不影响 QA 返回的统一文案，但管理端可见 Trace 会暴露连接 URL 等底层信息。最小修复是让 Trace 始终按原因码保存统一文案，原始 detail 仅写 debug 日志；集成测试锁定“Trace 不含连接详情”。
+- 运行既有 `TraceRecorderIntegrationTest` 时遇到同一 RabbitMQ listener 启动前置条件；其 6 个用例只验证 MySQL Trace/Usage 与线程传播，不消费 MQ。测试类同样限定 listener 自动启动为 false，保持生产与消息消费测试配置不变。
+
 > 本文记录 M13-M18 立项前的全部技术勘察证据。所有结论均来自本机实测或官方文档原文，不包含推测。
 >
 > 勘察时间：2026-09-18

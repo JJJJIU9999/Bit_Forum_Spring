@@ -35,21 +35,24 @@
 
 ## 三、当前仓库与交付状态
 
+> 下表中的 Git 相关字段（分支/HEAD/提交数/工作区/推送）是**某一个时间点的快照**，
+> 会随每次提交变化；实时值请以 `scripts/export-ai-context.sh` 生成的导出页眉或仓库 `git` 命令为准。
+
 | 项 | 现状 |
 | --- | --- |
-| 分支 | `feat/ai-agent`（基于 `main` 的 `d6dd582`）；相对 `main` 领先 38 个提交，**已 push 到 `origin/feat/ai-agent`** |
-| 提交方式 | 每个模块完成即独立提交；M13-M18 收尾时统一 push（`b82537d..5a385db`），GitHub Actions = **success** |
-| HEAD | `5a385db docs: finalize M13-M18 delivery state across README, briefings and graduation docs (M18)`（本地与远端一致） |
-| 工作区 | 干净（`git status --short` 无输出） |
+| 分支 | `feat/ai-agent`（基于 `main` 的 `d6dd582`）；相对 `main` 领先 **41** 个提交，已 push 到 `origin/feat/ai-agent` —— **指 `514f301` 及之前的提交**；本轮收口改动尚未提交（截至 2026-09-20 快照） |
+| 提交方式 | 每个模块完成即独立提交；M13-M18 收尾时统一 push（`b82537d..514f301`），CI success（**限 `514f301` 已提交内容**；本轮收口改动未提交、未过远端 CI）（截至 2026-09-20 快照） |
+| HEAD | `514f301 docs(graduation): refresh status summary with push and CI results (M18)`（本地与远端一致）（截至 2026-09-20 快照；实时值以导出页眉或 `git` 命令为准） |
+| 工作区 | 该次核实为干净；此后收口工作产生了未提交改动（详见 `closure-worklog.md`） |
 | 数据库 | MySQL 8.0.46，Flyway **V1-V19** 全部 success（AI 模块用 V13-V19，只新增、不改历史迁移） |
 | 向量索引 | `bitforum-kb`：114 个片段（HNSW / FLOAT32 / DIM 768 / COSINE） |
-| 测试 | 后端 **407 项（398 通过 + 9 条件跳过）**、前端 **36 项**，0 失败；跳过项均为需要真实 API Key 的调用测试 |
+| 测试 | 后端 **416 项（406 通过 + 10 条件跳过）**、前端 **36 项**，0 失败；跳过项均为需要真实 API Key 的调用测试 |
 | 中间件 | MySQL / Redis Stack / RabbitMQ 三容器 `Up (healthy)`（Docker Compose） |
 | 环境 | macOS；`./dev.sh` 起服务、`./stop-local.sh` 停止；后端 8080、前端 5173 |
 
 ## 四、验证证据（区分"测试"与"真实调用"）
 
-**自动化测试**：407 / 36 项全绿；每个模块完成都跑过 `mvn test` + `npm run build`；
+**自动化测试**：416 / 36 项全绿；每个模块完成都跑过 `mvn test` + `npm run build`；
 push 后 CI（GitHub Actions，后端 service containers + 前端 job）**success**。
 
 **真实 DeepSeek 调用**（非 mock，按需执行、默认跳过）：
@@ -97,7 +100,7 @@ push 后 CI（GitHub Actions，后端 service containers + 前端 job）**succes
 | `scripts/agent-tool-smoke.md`（M14 真实工具调用会话整理） | 未做（记录类小事） |
 | 「已点赞」反查 | 未做：Redis 只有"文章 → 用户集合"，补反向索引要改 M6 数据模型（已决策单独立项） |
 | 洞察报告前端历史列表 | 未做（接口 `/history` 已有，非验收项） |
-| ~~push 检查点~~ | **已完成**：`feat/ai-agent` 已推送（`5a385db`），CI success |
+| ~~push 检查点~~ | **已完成**：`feat/ai-agent` 已推送（最新 `514f301`），CI success （截至 2026-09-20 快照；实时值以导出页眉或 `git` 命令为准） |
 | 合并回 `main` | **未做**，等演示材料/压测/论文小改完成后再做最后一次 `merge --no-ff`（原计划即「最后一次性合并」） |
 | 评测数据仍在库中（带 `[M17Eval]` 前缀） | 刻意保留供答辩演示，展示时必须明确标为"演示数据" |
 | 论文 / 答辩 PPT / 演示视频 | 未开始（演示脚本骨架已在 `task_plan.md` 第十三节） |

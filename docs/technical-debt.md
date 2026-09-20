@@ -30,10 +30,23 @@
 - GitHub Actions 使用 MySQL、Redis、RabbitMQ service containers 提供可复现环境，本地开发则通过 Compose 启动三个依赖。
 - 尚未将测试系统拆成完全无依赖的单元测试和独立的集成测试 profile。
 
+### Medium Priority：自动化测试与本地开发共用同一个 Redis 向量索引
+
+- 全量 `mvn test` 会清空 Redis 向量索引 `bitforum-kb`（M15 起的既有行为），
+  跑完需要用 `M17_VECTOR_PROBE=true ./mvnw -s maven-settings.xml -Dtest=RecommendVectorRecallProbe test` 重建，
+  否则依赖向量召回的路径会**静默退化**为两路召回（不报错，只是少一路信号）。
+- 影响：在本地开发/演示环境跑一次全量回归会破坏演示数据；换机器或他人复现时也容易踩到。
+- 建议（未实施）：测试使用**独立索引名**（`BITFORUM_KB_INDEX` 已是环境变量）或独立 Redis database/容器，
+  与开发环境的索引彻底隔开。
+
 ### Medium Priority：没有生产负载与端到端基线
 
 - 当前验证聚焦于功能、业务规则、事务回滚、HTTP 响应和前端组件。
-- 未建立生产流量、压测、故障注入或浏览器端到端基线，因此不对吞吐量或可用性做定量声明。
+- **M18 已补**（2026-09-20）：AI 链路的本地性能观察（确定性持久化开销 n=35、真实端到端 n=5）与
+  运行时故障注入（QA 对话链路 + 预算闸门），见 `docs/graduation/ai-agent-upgrade/` 的
+  `ai-performance-observation.md` 与 `ai-fault-injection-report.md`，原始证据归档在同目录 `evidence/`。
+- **仍未建立**：生产流量、并发/吞吐压测、浏览器端到端基线、审核（MQ）与洞察（线程池）的链路级故障注入。
+  因此依旧**不对吞吐量或可用性做定量声明**；性能结论只代表"本地串行固定场景"。
 
 ## 已处理项
 
